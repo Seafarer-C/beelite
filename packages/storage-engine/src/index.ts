@@ -10,6 +10,16 @@ CREATE TABLE IF NOT EXISTS knowledge_nodes (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS knowledge_sources (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  path TEXT,
+  url TEXT,
+  imported_at TEXT NOT NULL,
+  metadata_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS knowledge_edges (
   id TEXT PRIMARY KEY,
   source_id TEXT NOT NULL,
@@ -50,6 +60,38 @@ CREATE TABLE IF NOT EXISTS graph_proposals (
   proposal_json TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS import_jobs (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL,
+  file_path TEXT,
+  source_count INTEGER NOT NULL DEFAULT 0,
+  node_count INTEGER NOT NULL DEFAULT 0,
+  edge_count INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  started_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_sources_type ON knowledge_sources(type);
+CREATE INDEX IF NOT EXISTS idx_nodes_type ON knowledge_nodes(type);
+CREATE INDEX IF NOT EXISTS idx_edges_source ON knowledge_edges(source_id);
+CREATE INDEX IF NOT EXISTS idx_edges_target ON knowledge_edges(target_id);
+CREATE INDEX IF NOT EXISTS idx_import_jobs_started ON import_jobs(started_at);
+
+CREATE TABLE IF NOT EXISTS llm_provider_settings (
+  provider_id TEXT PRIMARY KEY,
+  api_key TEXT,
+  base_url TEXT,
+  model TEXT
+);
+
+CREATE TABLE IF NOT EXISTS research_search_settings (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  provider TEXT NOT NULL DEFAULT 'brave',
+  api_key TEXT
+);
 `;
 
 export const STORAGE_BUCKETS = {
@@ -58,3 +100,5 @@ export const STORAGE_BUCKETS = {
   researchCache: "research-cache",
   images: "images"
 } as const;
+
+export * from "./repository";

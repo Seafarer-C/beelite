@@ -192,6 +192,9 @@ function looseEqual(a, b) {
   }
   return String(a) === String(b);
 }
+function looseIndexOf(arr, val) {
+  return arr.findIndex((item) => looseEqual(item, val));
+}
 const isRef$1 = (val) => {
   return !!(val && val["__v_isRef"] === true);
 };
@@ -2190,6 +2193,36 @@ function withCtx(fn, ctx = currentRenderingInstance, isNonScopedSlot) {
   renderFnWithContext._d = true;
   return renderFnWithContext;
 }
+function withDirectives(vnode, directives) {
+  if (currentRenderingInstance === null) {
+    return vnode;
+  }
+  const instance = getComponentPublicInstance(currentRenderingInstance);
+  const bindings = vnode.dirs || (vnode.dirs = []);
+  for (let i = 0; i < directives.length; i++) {
+    let [dir, value, arg, modifiers = EMPTY_OBJ] = directives[i];
+    if (dir) {
+      if (isFunction(dir)) {
+        dir = {
+          mounted: dir,
+          updated: dir
+        };
+      }
+      if (dir.deep) {
+        traverse(value);
+      }
+      bindings.push({
+        dir,
+        instance,
+        value,
+        oldValue: void 0,
+        arg,
+        modifiers
+      });
+    }
+  }
+  return vnode;
+}
 function invokeDirectiveHook(vnode, prevVNode, instance, name) {
   const bindings = vnode.dirs;
   const oldBindings = prevVNode && prevVNode.dirs;
@@ -2327,8 +2360,356 @@ function createPathGetter(ctx, path) {
     return cur;
   };
 }
+const pendingMounts = /* @__PURE__ */ new WeakMap();
 const TeleportEndKey = /* @__PURE__ */ Symbol("_vte");
 const isTeleport = (type) => type.__isTeleport;
+const isTeleportDisabled = (props) => props && (props.disabled || props.disabled === "");
+const isTeleportDeferred = (props) => props && (props.defer || props.defer === "");
+const isTargetSVG = (target) => typeof SVGElement !== "undefined" && target instanceof SVGElement;
+const isTargetMathML = (target) => typeof MathMLElement === "function" && target instanceof MathMLElement;
+const resolveTarget = (props, select) => {
+  const targetSelector = props && props.to;
+  if (isString(targetSelector)) {
+    if (!select) {
+      return null;
+    } else {
+      const target = select(targetSelector);
+      return target;
+    }
+  } else {
+    return targetSelector;
+  }
+};
+const TeleportImpl = {
+  name: "Teleport",
+  __isTeleport: true,
+  process(n1, n2, container, anchor, parentComponent, parentSuspense, namespace, slotScopeIds, optimized, internals) {
+    const {
+      mc: mountChildren,
+      pc: patchChildren,
+      pbc: patchBlockChildren,
+      o: { insert, querySelector, createText, createComment, parentNode }
+    } = internals;
+    const disabled = isTeleportDisabled(n2.props);
+    let { dynamicChildren } = n2;
+    const mount = (vnode, container2, anchor2) => {
+      if (vnode.shapeFlag & 16) {
+        mountChildren(
+          vnode.children,
+          container2,
+          anchor2,
+          parentComponent,
+          parentSuspense,
+          namespace,
+          slotScopeIds,
+          optimized
+        );
+      }
+    };
+    const mountToTarget = (vnode = n2) => {
+      const disabled2 = isTeleportDisabled(vnode.props);
+      const target = vnode.target = resolveTarget(vnode.props, querySelector);
+      const targetAnchor = prepareAnchor(target, vnode, createText, insert);
+      if (target) {
+        if (namespace !== "svg" && isTargetSVG(target)) {
+          namespace = "svg";
+        } else if (namespace !== "mathml" && isTargetMathML(target)) {
+          namespace = "mathml";
+        }
+        if (parentComponent && parentComponent.isCE) {
+          (parentComponent.ce._teleportTargets || (parentComponent.ce._teleportTargets = /* @__PURE__ */ new Set())).add(target);
+        }
+        if (!disabled2) {
+          mount(vnode, target, targetAnchor);
+          updateCssVars(vnode, false);
+        }
+      }
+    };
+    const queuePendingMount = (vnode) => {
+      const mountJob = () => {
+        if (pendingMounts.get(vnode) !== mountJob) return;
+        pendingMounts.delete(vnode);
+        if (isTeleportDisabled(vnode.props)) {
+          const mountContainer = parentNode(vnode.el) || container;
+          mount(vnode, mountContainer, vnode.anchor);
+          updateCssVars(vnode, true);
+        }
+        mountToTarget(vnode);
+      };
+      pendingMounts.set(vnode, mountJob);
+      queuePostRenderEffect(mountJob, parentSuspense);
+    };
+    if (n1 == null) {
+      const placeholder = n2.el = createText("");
+      const mainAnchor = n2.anchor = createText("");
+      insert(placeholder, container, anchor);
+      insert(mainAnchor, container, anchor);
+      if (isTeleportDeferred(n2.props) || parentSuspense && parentSuspense.pendingBranch) {
+        queuePendingMount(n2);
+        return;
+      }
+      if (disabled) {
+        mount(n2, container, mainAnchor);
+        updateCssVars(n2, true);
+      }
+      mountToTarget();
+    } else {
+      n2.el = n1.el;
+      const mainAnchor = n2.anchor = n1.anchor;
+      const pendingMount = pendingMounts.get(n1);
+      if (pendingMount) {
+        pendingMount.flags |= 8;
+        pendingMounts.delete(n1);
+        queuePendingMount(n2);
+        return;
+      }
+      n2.targetStart = n1.targetStart;
+      const target = n2.target = n1.target;
+      const targetAnchor = n2.targetAnchor = n1.targetAnchor;
+      const wasDisabled = isTeleportDisabled(n1.props);
+      const currentContainer = wasDisabled ? container : target;
+      const currentAnchor = wasDisabled ? mainAnchor : targetAnchor;
+      if (namespace === "svg" || isTargetSVG(target)) {
+        namespace = "svg";
+      } else if (namespace === "mathml" || isTargetMathML(target)) {
+        namespace = "mathml";
+      }
+      if (dynamicChildren) {
+        patchBlockChildren(
+          n1.dynamicChildren,
+          dynamicChildren,
+          currentContainer,
+          parentComponent,
+          parentSuspense,
+          namespace,
+          slotScopeIds
+        );
+        traverseStaticChildren(n1, n2, true);
+      } else if (!optimized) {
+        patchChildren(
+          n1,
+          n2,
+          currentContainer,
+          currentAnchor,
+          parentComponent,
+          parentSuspense,
+          namespace,
+          slotScopeIds,
+          false
+        );
+      }
+      if (disabled) {
+        if (!wasDisabled) {
+          moveTeleport(
+            n2,
+            container,
+            mainAnchor,
+            internals,
+            1
+          );
+        } else {
+          if (n2.props && n1.props && n2.props.to !== n1.props.to) {
+            n2.props.to = n1.props.to;
+          }
+        }
+      } else {
+        if ((n2.props && n2.props.to) !== (n1.props && n1.props.to)) {
+          const nextTarget = n2.target = resolveTarget(
+            n2.props,
+            querySelector
+          );
+          if (nextTarget) {
+            moveTeleport(
+              n2,
+              nextTarget,
+              null,
+              internals,
+              0
+            );
+          }
+        } else if (wasDisabled) {
+          moveTeleport(
+            n2,
+            target,
+            targetAnchor,
+            internals,
+            1
+          );
+        }
+      }
+      updateCssVars(n2, disabled);
+    }
+  },
+  remove(vnode, parentComponent, parentSuspense, { um: unmount, o: { remove: hostRemove } }, doRemove) {
+    const {
+      shapeFlag,
+      children,
+      anchor,
+      targetStart,
+      targetAnchor,
+      target,
+      props
+    } = vnode;
+    let shouldRemove = doRemove || !isTeleportDisabled(props);
+    const pendingMount = pendingMounts.get(vnode);
+    if (pendingMount) {
+      pendingMount.flags |= 8;
+      pendingMounts.delete(vnode);
+      shouldRemove = false;
+    }
+    if (target) {
+      hostRemove(targetStart);
+      hostRemove(targetAnchor);
+    }
+    doRemove && hostRemove(anchor);
+    if (shapeFlag & 16) {
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        unmount(
+          child,
+          parentComponent,
+          parentSuspense,
+          shouldRemove,
+          !!child.dynamicChildren
+        );
+      }
+    }
+  },
+  move: moveTeleport,
+  hydrate: hydrateTeleport
+};
+function moveTeleport(vnode, container, parentAnchor, { o: { insert }, m: move }, moveType = 2) {
+  if (moveType === 0) {
+    insert(vnode.targetAnchor, container, parentAnchor);
+  }
+  const { el, anchor, shapeFlag, children, props } = vnode;
+  const isReorder = moveType === 2;
+  if (isReorder) {
+    insert(el, container, parentAnchor);
+  }
+  if (!pendingMounts.has(vnode) && (!isReorder || isTeleportDisabled(props))) {
+    if (shapeFlag & 16) {
+      for (let i = 0; i < children.length; i++) {
+        move(
+          children[i],
+          container,
+          parentAnchor,
+          2
+        );
+      }
+    }
+  }
+  if (isReorder) {
+    insert(anchor, container, parentAnchor);
+  }
+}
+function hydrateTeleport(node, vnode, parentComponent, parentSuspense, slotScopeIds, optimized, {
+  o: { nextSibling, parentNode, querySelector, insert, createText }
+}, hydrateChildren) {
+  function hydrateAnchor(target2, targetNode) {
+    let targetAnchor = targetNode;
+    while (targetAnchor) {
+      if (targetAnchor && targetAnchor.nodeType === 8) {
+        if (targetAnchor.data === "teleport start anchor") {
+          vnode.targetStart = targetAnchor;
+        } else if (targetAnchor.data === "teleport anchor") {
+          vnode.targetAnchor = targetAnchor;
+          target2._lpa = vnode.targetAnchor && nextSibling(vnode.targetAnchor);
+          break;
+        }
+      }
+      targetAnchor = nextSibling(targetAnchor);
+    }
+  }
+  function hydrateDisabledTeleport(node2, vnode2) {
+    vnode2.anchor = hydrateChildren(
+      nextSibling(node2),
+      vnode2,
+      parentNode(node2),
+      parentComponent,
+      parentSuspense,
+      slotScopeIds,
+      optimized
+    );
+  }
+  const target = vnode.target = resolveTarget(
+    vnode.props,
+    querySelector
+  );
+  const disabled = isTeleportDisabled(vnode.props);
+  if (target) {
+    const targetNode = target._lpa || target.firstChild;
+    if (vnode.shapeFlag & 16) {
+      if (disabled) {
+        hydrateDisabledTeleport(node, vnode);
+        hydrateAnchor(target, targetNode);
+        if (!vnode.targetAnchor) {
+          prepareAnchor(
+            target,
+            vnode,
+            createText,
+            insert,
+            // if target is the same as the main view, insert anchors before current node
+            // to avoid hydrating mismatch
+            parentNode(node) === target ? node : null
+          );
+        }
+      } else {
+        vnode.anchor = nextSibling(node);
+        hydrateAnchor(target, targetNode);
+        if (!vnode.targetAnchor) {
+          prepareAnchor(target, vnode, createText, insert);
+        }
+        hydrateChildren(
+          targetNode && nextSibling(targetNode),
+          vnode,
+          target,
+          parentComponent,
+          parentSuspense,
+          slotScopeIds,
+          optimized
+        );
+      }
+    }
+    updateCssVars(vnode, disabled);
+  } else if (disabled) {
+    if (vnode.shapeFlag & 16) {
+      hydrateDisabledTeleport(node, vnode);
+      vnode.targetStart = node;
+      vnode.targetAnchor = nextSibling(node);
+    }
+  }
+  return vnode.anchor && nextSibling(vnode.anchor);
+}
+const Teleport = TeleportImpl;
+function updateCssVars(vnode, isDisabled) {
+  const ctx = vnode.ctx;
+  if (ctx && ctx.ut) {
+    let node, anchor;
+    if (isDisabled) {
+      node = vnode.el;
+      anchor = vnode.anchor;
+    } else {
+      node = vnode.targetStart;
+      anchor = vnode.targetAnchor;
+    }
+    while (node && node !== anchor) {
+      if (node.nodeType === 1) node.setAttribute("data-v-owner", ctx.uid);
+      node = node.nextSibling;
+    }
+    ctx.ut();
+  }
+}
+function prepareAnchor(target, vnode, createText, insert, anchor = null) {
+  const targetStart = vnode.targetStart = createText("");
+  const targetAnchor = vnode.targetAnchor = createText("");
+  targetStart[TeleportEndKey] = targetAnchor;
+  if (target) {
+    insert(targetStart, target, anchor);
+    insert(targetAnchor, target, anchor);
+  }
+  return targetAnchor;
+}
 const leaveCbKey = /* @__PURE__ */ Symbol("_leaveCb");
 function setTransitionHooks(vnode, hooks) {
   if (vnode.shapeFlag & 6 && vnode.component) {
@@ -6371,6 +6752,134 @@ function shouldSetAsPropForVueCE(el, key) {
   const camelKey = camelize(key);
   return Array.isArray(props) ? props.some((prop) => camelize(prop) === camelKey) : Object.keys(props).some((prop) => camelize(prop) === camelKey);
 }
+const getModelAssigner = (vnode) => {
+  const fn = vnode.props["onUpdate:modelValue"] || false;
+  return isArray(fn) ? (value) => invokeArrayFns(fn, value) : fn;
+};
+function onCompositionStart(e) {
+  e.target.composing = true;
+}
+function onCompositionEnd(e) {
+  const target = e.target;
+  if (target.composing) {
+    target.composing = false;
+    target.dispatchEvent(new Event("input"));
+  }
+}
+const assignKey = /* @__PURE__ */ Symbol("_assign");
+function castValue(value, trim, number) {
+  if (trim) value = value.trim();
+  if (number) value = looseToNumber(value);
+  return value;
+}
+const vModelText = {
+  created(el, { modifiers: { lazy, trim, number } }, vnode) {
+    el[assignKey] = getModelAssigner(vnode);
+    const castToNumber = number || vnode.props && vnode.props.type === "number";
+    addEventListener(el, lazy ? "change" : "input", (e) => {
+      if (e.target.composing) return;
+      el[assignKey](castValue(el.value, trim, castToNumber));
+    });
+    if (trim || castToNumber) {
+      addEventListener(el, "change", () => {
+        el.value = castValue(el.value, trim, castToNumber);
+      });
+    }
+    if (!lazy) {
+      addEventListener(el, "compositionstart", onCompositionStart);
+      addEventListener(el, "compositionend", onCompositionEnd);
+      addEventListener(el, "change", onCompositionEnd);
+    }
+  },
+  // set value on mounted so it's after min/max for type="range"
+  mounted(el, { value }) {
+    el.value = value == null ? "" : value;
+  },
+  beforeUpdate(el, { value, oldValue, modifiers: { lazy, trim, number } }, vnode) {
+    el[assignKey] = getModelAssigner(vnode);
+    if (el.composing) return;
+    const elValue = (number || el.type === "number") && !/^0\d/.test(el.value) ? looseToNumber(el.value) : el.value;
+    const newValue = value == null ? "" : value;
+    if (elValue === newValue) {
+      return;
+    }
+    const rootNode = el.getRootNode();
+    if ((rootNode instanceof Document || rootNode instanceof ShadowRoot) && rootNode.activeElement === el && el.type !== "range") {
+      if (lazy && value === oldValue) {
+        return;
+      }
+      if (trim && el.value.trim() === newValue) {
+        return;
+      }
+    }
+    el.value = newValue;
+  }
+};
+const vModelSelect = {
+  // <select multiple> value need to be deep traversed
+  deep: true,
+  created(el, { value, modifiers: { number } }, vnode) {
+    const isSetModel = isSet(value);
+    addEventListener(el, "change", () => {
+      const selectedVal = Array.prototype.filter.call(el.options, (o) => o.selected).map(
+        (o) => number ? looseToNumber(getValue(o)) : getValue(o)
+      );
+      el[assignKey](
+        el.multiple ? isSetModel ? new Set(selectedVal) : selectedVal : selectedVal[0]
+      );
+      el._assigning = true;
+      nextTick(() => {
+        el._assigning = false;
+      });
+    });
+    el[assignKey] = getModelAssigner(vnode);
+  },
+  // set value in mounted & updated because <select> relies on its children
+  // <option>s.
+  mounted(el, { value }) {
+    setSelected(el, value);
+  },
+  beforeUpdate(el, _binding, vnode) {
+    el[assignKey] = getModelAssigner(vnode);
+  },
+  updated(el, { value }) {
+    if (!el._assigning) {
+      setSelected(el, value);
+    }
+  }
+};
+function setSelected(el, value) {
+  const isMultiple = el.multiple;
+  const isArrayValue = isArray(value);
+  if (isMultiple && !isArrayValue && !isSet(value)) {
+    return;
+  }
+  for (let i = 0, l = el.options.length; i < l; i++) {
+    const option = el.options[i];
+    const optionValue = getValue(option);
+    if (isMultiple) {
+      if (isArrayValue) {
+        const optionType = typeof optionValue;
+        if (optionType === "string" || optionType === "number") {
+          option.selected = value.some((v) => String(v) === String(optionValue));
+        } else {
+          option.selected = looseIndexOf(value, optionValue) > -1;
+        }
+      } else {
+        option.selected = value.has(optionValue);
+      }
+    } else if (looseEqual(getValue(option), value)) {
+      if (el.selectedIndex !== i) el.selectedIndex = i;
+      return;
+    }
+  }
+  if (!isMultiple && el.selectedIndex !== -1) {
+    el.selectedIndex = -1;
+  }
+}
+function getValue(el) {
+  return "_value" in el ? el._value : el.value;
+}
 const systemModifiers = ["ctrl", "shift", "alt", "meta"];
 const modifierGuards = {
   stop: (e) => e.stopPropagation(),
@@ -6395,6 +6904,30 @@ const withModifiers = (fn, modifiers) => {
       if (guard && guard(event, modifiers)) return;
     }
     return fn(event, ...args);
+  }));
+};
+const keyNames = {
+  esc: "escape",
+  space: " ",
+  up: "arrow-up",
+  left: "arrow-left",
+  right: "arrow-right",
+  down: "arrow-down",
+  delete: "backspace"
+};
+const withKeys = (fn, modifiers) => {
+  const cache = fn._withKeys || (fn._withKeys = {});
+  const cacheKey = modifiers.join(".");
+  return cache[cacheKey] || (cache[cacheKey] = ((event) => {
+    if (!("key" in event)) {
+      return;
+    }
+    const eventKey = hyphenate(event.key);
+    if (modifiers.some(
+      (k) => k === eventKey || keyNames[k] === eventKey
+    )) {
+      return fn(event);
+    }
   }));
 };
 const rendererOptions = /* @__PURE__ */ extend({ patchProp }, nodeOps);
@@ -6832,6 +7365,10 @@ const createLucideIcon = (iconName, iconNode) => (props, { slots, attrs }) => h(
   },
   slots
 );
+const ArrowLeft = createLucideIcon("arrow-left", [
+  ["path", { d: "m12 19-7-7 7-7", key: "1l729n" }],
+  ["path", { d: "M19 12H5", key: "x3x0zl" }]
+]);
 const Bell = createLucideIcon("bell", [
   ["path", { d: "M10.268 21a2 2 0 0 0 3.464 0", key: "vwvbt9" }],
   [
@@ -6839,6 +7376,15 @@ const Bell = createLucideIcon("bell", [
     {
       d: "M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326",
       key: "11g9vi"
+    }
+  ]
+]);
+const Bookmark = createLucideIcon("bookmark", [
+  [
+    "path",
+    {
+      d: "M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z",
+      key: "oz39mx"
     }
   ]
 ]);
@@ -6894,6 +7440,48 @@ const Download = createLucideIcon("download", [
   ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", key: "ih7n3h" }],
   ["path", { d: "m7 10 5 5 5-5", key: "brsn70" }]
 ]);
+const FileBraces = createLucideIcon("file-braces", [
+  [
+    "path",
+    {
+      d: "M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z",
+      key: "1oefj6"
+    }
+  ],
+  ["path", { d: "M14 2v5a1 1 0 0 0 1 1h5", key: "wfsgrz" }],
+  [
+    "path",
+    { d: "M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1", key: "1oajmo" }
+  ],
+  [
+    "path",
+    { d: "M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1", key: "mpwhp6" }
+  ]
+]);
+const FileText = createLucideIcon("file-text", [
+  [
+    "path",
+    {
+      d: "M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z",
+      key: "1oefj6"
+    }
+  ],
+  ["path", { d: "M14 2v5a1 1 0 0 0 1 1h5", key: "wfsgrz" }],
+  ["path", { d: "M10 9H8", key: "b1mrlr" }],
+  ["path", { d: "M16 13H8", key: "t4e002" }],
+  ["path", { d: "M16 17H8", key: "z1uh3a" }]
+]);
+const FlaskConical = createLucideIcon("flask-conical", [
+  [
+    "path",
+    {
+      d: "M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2",
+      key: "18mbvz"
+    }
+  ],
+  ["path", { d: "M6.453 15h11.094", key: "3shlmq" }],
+  ["path", { d: "M8.5 2h7", key: "csnxdl" }]
+]);
 const GitBranch = createLucideIcon("git-branch", [
   ["path", { d: "M15 6a9 9 0 0 0-9 9V3", key: "1cii5b" }],
   ["circle", { cx: "18", cy: "6", r: "3", key: "1h7g24" }],
@@ -6905,6 +7493,11 @@ const GitPullRequestDraft = createLucideIcon("git-pull-request-draft", [
   ["path", { d: "M18 6V5", key: "1oao2s" }],
   ["path", { d: "M18 11v-1", key: "11c8tz" }],
   ["line", { x1: "6", x2: "6", y1: "9", y2: "21", key: "rroup" }]
+]);
+const Globe = createLucideIcon("globe", [
+  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+  ["path", { d: "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", key: "13o1zl" }],
+  ["path", { d: "M2 12h20", key: "9i4pu4" }]
 ]);
 const Hand = createLucideIcon("hand", [
   ["path", { d: "M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2", key: "1fvzgz" }],
@@ -6922,6 +7515,19 @@ const Image = createLucideIcon("image", [
   ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", ry: "2", key: "1m3agn" }],
   ["circle", { cx: "9", cy: "9", r: "2", key: "af1f0g" }],
   ["path", { d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21", key: "1xmnt7" }]
+]);
+const KeyRound = createLucideIcon("key-round", [
+  [
+    "path",
+    {
+      d: "M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z",
+      key: "1s6t7t"
+    }
+  ],
+  ["circle", { cx: "16.5", cy: "7.5", r: ".5", fill: "currentColor", key: "w0ekpg" }]
+]);
+const LoaderCircle = createLucideIcon("loader-circle", [
+  ["path", { d: "M21 12a9 9 0 1 1-6.219-8.56", key: "13zald" }]
 ]);
 const MessageCircle = createLucideIcon("message-circle", [
   [
@@ -6983,13 +7589,39 @@ const PencilLine = createLucideIcon("pencil-line", [
     }
   ]
 ]);
+const Play = createLucideIcon("play", [
+  [
+    "path",
+    {
+      d: "M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z",
+      key: "10ikf1"
+    }
+  ]
+]);
 const Plus = createLucideIcon("plus", [
   ["path", { d: "M5 12h14", key: "1ays0h" }],
   ["path", { d: "M12 5v14", key: "s699le" }]
 ]);
+const Save = createLucideIcon("save", [
+  [
+    "path",
+    {
+      d: "M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z",
+      key: "1c8476"
+    }
+  ],
+  ["path", { d: "M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7", key: "1ydtos" }],
+  ["path", { d: "M7 3v4a1 1 0 0 0 1 1h7", key: "t51u73" }]
+]);
 const Search = createLucideIcon("search", [
   ["path", { d: "m21 21-4.34-4.34", key: "14j7rj" }],
   ["circle", { cx: "11", cy: "11", r: "8", key: "4ej97u" }]
+]);
+const Settings2 = createLucideIcon("settings-2", [
+  ["path", { d: "M14 17H5", key: "gfn3mx" }],
+  ["path", { d: "M19 7h-9", key: "6i9tg" }],
+  ["circle", { cx: "17", cy: "17", r: "3", key: "18b49y" }],
+  ["circle", { cx: "7", cy: "7", r: "3", key: "dfmy0x" }]
 ]);
 const Settings = createLucideIcon("settings", [
   [
@@ -7000,6 +7632,15 @@ const Settings = createLucideIcon("settings", [
     }
   ],
   ["circle", { cx: "12", cy: "12", r: "3", key: "1v7zrd" }]
+]);
+const Shield = createLucideIcon("shield", [
+  [
+    "path",
+    {
+      d: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
+      key: "oel41y"
+    }
+  ]
 ]);
 const Sparkles = createLucideIcon("sparkles", [
   [
@@ -7058,6 +7699,11 @@ const Type = createLucideIcon("type", [
   ["path", { d: "M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2", key: "e0r10z" }],
   ["path", { d: "M9 20h6", key: "s66wpe" }]
 ]);
+const Upload = createLucideIcon("upload", [
+  ["path", { d: "M12 3v12", key: "1x0j5s" }],
+  ["path", { d: "m17 8-5-5-5 5", key: "7q97r8" }],
+  ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", key: "ih7n3h" }]
+]);
 const Vault = createLucideIcon("vault", [
   ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", key: "afitv7" }],
   ["circle", { cx: "7.5", cy: "7.5", r: ".5", fill: "currentColor", key: "kqv944" }],
@@ -7069,6 +7715,10 @@ const Vault = createLucideIcon("vault", [
   ["circle", { cx: "16.5", cy: "16.5", r: ".5", fill: "currentColor", key: "fubopw" }],
   ["path", { d: "m13.4 13.4 2.7 2.7", key: "abhel3" }],
   ["circle", { cx: "12", cy: "12", r: "2", key: "1c9p78" }]
+]);
+const X = createLucideIcon("x", [
+  ["path", { d: "M18 6 6 18", key: "1bl5f8" }],
+  ["path", { d: "m6 6 12 12", key: "d8bk6v" }]
 ]);
 const PROVIDER_TEMPLATES = [
   {
@@ -7125,10 +7775,20 @@ const PROVIDER_TEMPLATES = [
   {
     id: "openrouter",
     label: "OpenRouter",
-    defaultModels: ["openrouter/auto"],
+    defaultBaseUrl: "https://openrouter.ai/api/v1",
+    defaultModels: ["openrouter/auto", "anthropic/claude-sonnet-4"],
     supportsLocal: false,
-    supportsCustomBaseUrl: false,
+    supportsCustomBaseUrl: true,
     notes: "用于快速试验多模型路由。"
+  },
+  {
+    id: "openai-compatible",
+    label: "OpenAI 兼容",
+    defaultBaseUrl: "",
+    defaultModels: ["gpt-4o-mini", "text-embedding-3-large"],
+    supportsLocal: false,
+    supportsCustomBaseUrl: true,
+    notes: "自建网关或其它兼容 OpenAI Chat Completions 的服务。"
   },
   {
     id: "ollama",
@@ -7148,41 +7808,6 @@ const DEFAULT_MODEL_ROUTES = [
   { task: "research", providerId: "anthropic", model: "claude-sonnet-4.5" },
   { task: "embedding", providerId: "openai-compatible", model: "text-embedding-3-large" }
 ];
-function clampZoom(zoom) {
-  return Math.min(1.8, Math.max(0.32, zoom));
-}
-function worldToScreen(point, viewport) {
-  return {
-    x: point.x * viewport.zoom + viewport.x,
-    y: point.y * viewport.zoom + viewport.y
-  };
-}
-function isBlockVisible(block, viewport, viewportSize, overscan = 220) {
-  const topLeft = worldToScreen({ x: block.x, y: block.y }, viewport);
-  const bottomRight = worldToScreen(
-    { x: block.x + block.width, y: block.y + block.height },
-    viewport
-  );
-  return bottomRight.x >= -overscan && bottomRight.y >= -overscan && topLeft.x <= viewportSize.width + overscan && topLeft.y <= viewportSize.height + overscan;
-}
-function createGraphProposal(input) {
-  return {
-    id: input.id,
-    title: input.title,
-    status: "draft",
-    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-    sourceIds: input.sourceIds,
-    nodes: input.nodes,
-    edges: input.edges,
-    openQuestions: input.openQuestions ?? [],
-    warnings: input.warnings ?? []
-  };
-}
-function confidenceBand(confidence) {
-  if (confidence >= 0.78) return "high";
-  if (confidence >= 0.52) return "medium";
-  return "low";
-}
 function createRootSpace() {
   const now2 = (/* @__PURE__ */ new Date()).toISOString();
   return {
@@ -7228,6 +7853,41 @@ function mapNodesToBlocks(input) {
       }
     };
   });
+}
+function clampZoom(zoom) {
+  return Math.min(1.8, Math.max(0.32, zoom));
+}
+function worldToScreen(point, viewport) {
+  return {
+    x: point.x * viewport.zoom + viewport.x,
+    y: point.y * viewport.zoom + viewport.y
+  };
+}
+function isBlockVisible(block, viewport, viewportSize, overscan = 220) {
+  const topLeft = worldToScreen({ x: block.x, y: block.y }, viewport);
+  const bottomRight = worldToScreen(
+    { x: block.x + block.width, y: block.y + block.height },
+    viewport
+  );
+  return bottomRight.x >= -overscan && bottomRight.y >= -overscan && topLeft.x <= viewportSize.width + overscan && topLeft.y <= viewportSize.height + overscan;
+}
+function createGraphProposal(input) {
+  return {
+    id: input.id,
+    title: input.title,
+    status: "draft",
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    sourceIds: input.sourceIds,
+    nodes: input.nodes,
+    edges: input.edges,
+    openQuestions: input.openQuestions ?? [],
+    warnings: input.warnings ?? []
+  };
+}
+function confidenceBand(confidence) {
+  if (confidence >= 0.78) return "high";
+  if (confidence >= 0.52) return "medium";
+  return "low";
 }
 const now = (/* @__PURE__ */ new Date()).toISOString();
 const mockNodes = [
@@ -7420,21 +8080,66 @@ const mockProposal = createGraphProposal({
 const useWorkspaceStore = /* @__PURE__ */ defineStore("workspace", () => {
   const nodes = /* @__PURE__ */ ref(mockNodes);
   const edges = /* @__PURE__ */ ref(mockEdges);
-  const spaces = /* @__PURE__ */ ref([rootSpace]);
-  const blocks = /* @__PURE__ */ ref(mockBlocks);
+  const spaces = /* @__PURE__ */ ref([{ ...rootSpace, nodeIds: mockNodes.map((n) => n.id) }]);
+  const blocks = /* @__PURE__ */ ref([...mockBlocks]);
   const activeSpaceId = /* @__PURE__ */ ref(rootSpace.id);
   const activeTool = /* @__PURE__ */ ref("select");
   const selectedBlockId = /* @__PURE__ */ ref("block-node-rag");
   const viewport = /* @__PURE__ */ ref({ x: 560, y: 380, zoom: 0.74 });
   const graphProposal = /* @__PURE__ */ ref(mockProposal);
+  const importStats = /* @__PURE__ */ ref(null);
+  const importJobs = /* @__PURE__ */ ref([]);
+  const importSources = /* @__PURE__ */ ref([]);
+  const lastImportResult = /* @__PURE__ */ ref(null);
+  const importError = /* @__PURE__ */ ref(null);
+  const importLoading = /* @__PURE__ */ ref(false);
+  const useLiveWorkspace = /* @__PURE__ */ ref(false);
+  const llmSettings = /* @__PURE__ */ ref(null);
+  const researchSettings = /* @__PURE__ */ ref(null);
+  const modelSettingsOpen = /* @__PURE__ */ ref(false);
   const activeSpace = computed(
     () => spaces.value.find((space) => space.id === activeSpaceId.value) ?? spaces.value[0]
   );
+  const breadcrumbTrail = computed(() => {
+    const byId = new Map(spaces.value.map((s) => [s.id, s]));
+    const chain = [];
+    let current = spaces.value.find((s) => s.id === activeSpaceId.value) ?? spaces.value[0];
+    while (current) {
+      chain.unshift(current);
+      current = current.parentSpaceId ? byId.get(current.parentSpaceId) : void 0;
+    }
+    return chain;
+  });
   const selectedBlock = computed(
     () => blocks.value.find((block) => block.id === selectedBlockId.value) ?? null
   );
-  const activeModelRoutes = computed(() => DEFAULT_MODEL_ROUTES.slice(0, 4));
+  const activeModelRoutes = computed(
+    () => llmSettings.value?.routes ?? DEFAULT_MODEL_ROUTES
+  );
   const providerTemplates = computed(() => PROVIDER_TEMPLATES);
+  function resetDemoWorkspace() {
+    nodes.value = mockNodes;
+    edges.value = mockEdges;
+    spaces.value = [{ ...rootSpace, nodeIds: mockNodes.map((n) => n.id) }];
+    blocks.value = [...mockBlocks];
+    activeSpaceId.value = rootSpace.id;
+    graphProposal.value = mockProposal;
+    selectedBlockId.value = "block-node-rag";
+    useLiveWorkspace.value = false;
+  }
+  function applyLiveSnapshot(snapshot) {
+    const fallbackRoot = createRootSpace();
+    spaces.value = snapshot.spaces.length > 0 ? snapshot.spaces : [fallbackRoot];
+    nodes.value = snapshot.nodes;
+    edges.value = snapshot.edges;
+    blocks.value = snapshot.blocks;
+    const preferredId = activeSpaceId.value;
+    const nextSpace = spaces.value.find((s) => s.id === preferredId) ?? spaces.value.find((s) => s.id === "space-root");
+    activeSpaceId.value = nextSpace?.id ?? spaces.value[0]?.id ?? fallbackRoot.id;
+    graphProposal.value = snapshot.proposal ?? mockProposal;
+    useLiveWorkspace.value = snapshot.nodes.length > 0;
+    selectedBlockId.value = snapshot.blocks[0]?.id ?? null;
+  }
   function setTool(tool) {
     activeTool.value = tool;
   }
@@ -7463,6 +8168,93 @@ const useWorkspaceStore = /* @__PURE__ */ defineStore("workspace", () => {
       zoom: nextZoom
     };
   }
+  async function refreshStorage() {
+    if (!window.beelite) return;
+    const [stats, jobs, sources] = await Promise.all([
+      window.beelite.storageStats(),
+      window.beelite.listImportJobs(),
+      window.beelite.listSources()
+    ]);
+    importStats.value = stats;
+    importJobs.value = jobs;
+    importSources.value = sources;
+  }
+  async function refreshLlmSettings() {
+    if (!window.beelite?.getLlmSettings) return;
+    const data = await window.beelite.getLlmSettings();
+    if (data) llmSettings.value = data;
+  }
+  async function refreshResearchSettings() {
+    if (!window.beelite?.getResearchSettings) return;
+    const data = await window.beelite.getResearchSettings();
+    researchSettings.value = data;
+  }
+  async function researchSearch(params) {
+    if (!window.beelite?.researchSearch) {
+      return {
+        ok: false,
+        query: params.query ?? "",
+        results: [],
+        error: "Electron IPC 未连接"
+      };
+    }
+    return window.beelite.researchSearch(params);
+  }
+  async function researchFetchPage(params) {
+    if (!window.beelite?.researchFetchPage) {
+      return {
+        ok: false,
+        error: "Electron IPC 未连接"
+      };
+    }
+    return window.beelite.researchFetchPage(params);
+  }
+  function setModelSettingsOpen(value) {
+    modelSettingsOpen.value = value;
+  }
+  async function loadWorkspaceFromMain() {
+    if (!window.beelite?.loadWorkspace) return;
+    const snapshot = await window.beelite.loadWorkspace();
+    if (!snapshot) return;
+    if (snapshot.nodes.length > 0) {
+      applyLiveSnapshot(snapshot);
+    } else {
+      resetDemoWorkspace();
+    }
+  }
+  async function bootstrap() {
+    if (!window.beelite?.loadWorkspace) {
+      resetDemoWorkspace();
+      return;
+    }
+    await refreshStorage();
+    await refreshLlmSettings();
+    await refreshResearchSettings();
+    await loadWorkspaceFromMain();
+  }
+  async function importChatGpt() {
+    await runImport(() => window.beelite?.importChatGpt() ?? Promise.resolve(null));
+  }
+  async function importBookmarks() {
+    await runImport(() => window.beelite?.importBookmarks() ?? Promise.resolve(null));
+  }
+  async function runImport(task) {
+    importError.value = null;
+    importLoading.value = true;
+    try {
+      const result = await task();
+      if (result) {
+        lastImportResult.value = result;
+        importStats.value = result.stats;
+      }
+      await refreshStorage();
+      await loadWorkspaceFromMain();
+    } catch (error) {
+      importError.value = error instanceof Error ? error.message : String(error);
+    } finally {
+      importLoading.value = false;
+    }
+  }
   return {
     nodes,
     edges,
@@ -7473,37 +8265,58 @@ const useWorkspaceStore = /* @__PURE__ */ defineStore("workspace", () => {
     selectedBlockId,
     selectedBlock,
     activeSpace,
+    breadcrumbTrail,
     activeModelRoutes,
     providerTemplates,
     viewport,
     graphProposal,
+    importStats,
+    importJobs,
+    importSources,
+    lastImportResult,
+    importError,
+    importLoading,
+    useLiveWorkspace,
+    llmSettings,
+    researchSettings,
+    modelSettingsOpen,
     setTool,
     selectBlock,
     panBy,
-    zoomBy
+    zoomBy,
+    refreshStorage,
+    refreshLlmSettings,
+    refreshResearchSettings,
+    researchSearch,
+    researchFetchPage,
+    setModelSettingsOpen,
+    loadWorkspaceFromMain,
+    bootstrap,
+    importChatGpt,
+    importBookmarks
   };
 });
-const _hoisted_1$5 = { class: "sidebar" };
-const _hoisted_2$4 = { class: "brand-row" };
-const _hoisted_3$3 = {
+const _hoisted_1$9 = { class: "sidebar" };
+const _hoisted_2$8 = { class: "brand-row" };
+const _hoisted_3$7 = {
   class: "sidebar-nav",
   "aria-label": "主导航"
 };
-const _hoisted_4$3 = {
+const _hoisted_4$7 = {
   class: "sidebar-nav utility",
   "aria-label": "工具"
 };
-const _hoisted_5$3 = {
+const _hoisted_5$7 = {
   class: "zoom-widget",
   "aria-label": "缩放"
 };
-const _hoisted_6$3 = { class: "zoom-controls" };
-const _hoisted_7$3 = {
+const _hoisted_6$7 = { class: "zoom-controls" };
+const _hoisted_7$7 = {
   class: "help-button",
   type: "button",
   "aria-label": "帮助"
 };
-const _sfc_main$5 = /* @__PURE__ */ defineComponent({
+const _sfc_main$9 = /* @__PURE__ */ defineComponent({
   __name: "AppSidebar",
   setup(__props) {
     const store = useWorkspaceStore();
@@ -7524,13 +8337,13 @@ const _sfc_main$5 = /* @__PURE__ */ defineComponent({
       { label: "回收站", icon: Trash2 }
     ];
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("aside", _hoisted_1$5, [
-        createBaseVNode("div", _hoisted_2$4, [
+      return openBlock(), createElementBlock("aside", _hoisted_1$9, [
+        createBaseVNode("div", _hoisted_2$8, [
           _cache[2] || (_cache[2] = createBaseVNode("div", { class: "brand-mark" }, "B", -1)),
           _cache[3] || (_cache[3] = createBaseVNode("span", null, "BeeLite", -1)),
           createVNode(unref(ChevronDown), { size: 16 })
         ]),
-        createBaseVNode("nav", _hoisted_3$3, [
+        createBaseVNode("nav", _hoisted_3$7, [
           (openBlock(), createElementBlock(Fragment, null, renderList(navItems, (item) => {
             return createBaseVNode("button", {
               key: item.label,
@@ -7542,7 +8355,7 @@ const _sfc_main$5 = /* @__PURE__ */ defineComponent({
             ], 2);
           }), 64))
         ]),
-        createBaseVNode("nav", _hoisted_4$3, [
+        createBaseVNode("nav", _hoisted_4$7, [
           (openBlock(), createElementBlock(Fragment, null, renderList(utilityItems, (item) => {
             return createBaseVNode("button", {
               key: item.label,
@@ -7555,8 +8368,8 @@ const _sfc_main$5 = /* @__PURE__ */ defineComponent({
           }), 64))
         ]),
         _cache[5] || (_cache[5] = createBaseVNode("div", { class: "sidebar-spacer" }, null, -1)),
-        createBaseVNode("section", _hoisted_5$3, [
-          createBaseVNode("div", _hoisted_6$3, [
+        createBaseVNode("section", _hoisted_5$7, [
+          createBaseVNode("div", _hoisted_6$7, [
             createBaseVNode("button", {
               type: "button",
               "aria-label": "缩小",
@@ -7575,20 +8388,20 @@ const _sfc_main$5 = /* @__PURE__ */ defineComponent({
           ]),
           _cache[4] || (_cache[4] = createStaticVNode('<div class="mini-map-ghost"><span class="mini-node one"></span><span class="mini-node two"></span><span class="mini-node three"></span><span class="mini-node four"></span><span class="mini-window"></span></div>', 1))
         ]),
-        createBaseVNode("button", _hoisted_7$3, [
+        createBaseVNode("button", _hoisted_7$7, [
           createVNode(unref(CircleQuestionMark), { size: 18 })
         ])
       ]);
     };
   }
 });
-const _hoisted_1$4 = {
+const _hoisted_1$8 = {
   class: "canvas-toolbar",
   role: "toolbar",
   "aria-label": "画布工具"
 };
-const _hoisted_2$3 = ["title", "onClick"];
-const _sfc_main$4 = /* @__PURE__ */ defineComponent({
+const _hoisted_2$7 = ["title", "onClick"];
+const _sfc_main$8 = /* @__PURE__ */ defineComponent({
   __name: "CanvasToolbar",
   setup(__props) {
     const store = useWorkspaceStore();
@@ -7603,7 +8416,7 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
       { id: "graph", label: "图谱", icon: Network }
     ];
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$4, [
+      return openBlock(), createElementBlock("div", _hoisted_1$8, [
         (openBlock(), createElementBlock(Fragment, null, renderList(tools, (tool) => {
           return createBaseVNode("button", {
             key: tool.id,
@@ -7613,8 +8426,79 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
             onClick: ($event) => unref(store).setTool(tool.id)
           }, [
             (openBlock(), createBlock(resolveDynamicComponent(tool.icon), { size: 20 }))
-          ], 10, _hoisted_2$3);
+          ], 10, _hoisted_2$7);
         }), 64))
+      ]);
+    };
+  }
+});
+const _hoisted_1$7 = {
+  class: "import-panel",
+  "aria-label": "导入数据"
+};
+const _hoisted_2$6 = { key: 0 };
+const _hoisted_3$6 = { key: 1 };
+const _hoisted_4$6 = { class: "import-actions" };
+const _hoisted_5$6 = ["disabled"];
+const _hoisted_6$6 = ["disabled"];
+const _hoisted_7$6 = {
+  key: 0,
+  class: "import-error"
+};
+const _hoisted_8$5 = {
+  key: 1,
+  class: "import-result"
+};
+const _sfc_main$7 = /* @__PURE__ */ defineComponent({
+  __name: "ImportPanel",
+  setup(__props) {
+    const store = useWorkspaceStore();
+    const isElectronReady = computed(() => Boolean(window.beelite));
+    const stats = computed(
+      () => store.importStats ?? {
+        sources: 0,
+        nodes: 0,
+        edges: 0,
+        spaces: 0,
+        blocks: 0,
+        proposals: 0,
+        importJobs: 0
+      }
+    );
+    return (_ctx, _cache) => {
+      return openBlock(), createElementBlock("section", _hoisted_1$7, [
+        createBaseVNode("header", null, [
+          createVNode(unref(Database), { size: 17 }),
+          createBaseVNode("div", null, [
+            _cache[2] || (_cache[2] = createBaseVNode("strong", null, "Local Knowledge Store", -1)),
+            isElectronReady.value ? (openBlock(), createElementBlock("span", _hoisted_2$6, toDisplayString(stats.value.sources) + " sources · " + toDisplayString(stats.value.nodes) + " nodes", 1)) : (openBlock(), createElementBlock("span", _hoisted_3$6, "Electron IPC 未连接"))
+          ])
+        ]),
+        createBaseVNode("div", _hoisted_4$6, [
+          createBaseVNode("button", {
+            type: "button",
+            disabled: unref(store).importLoading || !isElectronReady.value,
+            onClick: _cache[0] || (_cache[0] = //@ts-ignore
+            (...args) => unref(store).importChatGpt && unref(store).importChatGpt(...args))
+          }, [
+            createVNode(unref(FileBraces), { size: 16 }),
+            _cache[3] || (_cache[3] = createTextVNode(" ChatGPT JSON ", -1))
+          ], 8, _hoisted_5$6),
+          createBaseVNode("button", {
+            type: "button",
+            disabled: unref(store).importLoading || !isElectronReady.value,
+            onClick: _cache[1] || (_cache[1] = //@ts-ignore
+            (...args) => unref(store).importBookmarks && unref(store).importBookmarks(...args))
+          }, [
+            createVNode(unref(Bookmark), { size: 16 }),
+            _cache[4] || (_cache[4] = createTextVNode(" 浏览器收藏夹 ", -1))
+          ], 8, _hoisted_6$6)
+        ]),
+        unref(store).importError ? (openBlock(), createElementBlock("p", _hoisted_7$6, toDisplayString(unref(store).importError), 1)) : createCommentVNode("", true),
+        unref(store).lastImportResult ? (openBlock(), createElementBlock("div", _hoisted_8$5, [
+          createVNode(unref(Upload), { size: 15 }),
+          createBaseVNode("span", null, toDisplayString(unref(store).lastImportResult.job.sourceCount) + " sources / " + toDisplayString(unref(store).lastImportResult.job.nodeCount) + " nodes imported ", 1)
+        ])) : createCommentVNode("", true)
       ]);
     };
   }
@@ -7745,17 +8629,17 @@ function useElementSize(target, initialSize = {
     stop
   };
 }
-const _hoisted_1$3 = { class: "card-header" };
-const _hoisted_2$2 = { class: "task-list" };
-const _hoisted_3$2 = { class: "card-header" };
-const _hoisted_4$2 = { class: "flow-steps" };
-const _hoisted_5$2 = { class: "card-header" };
-const _hoisted_6$2 = {
+const _hoisted_1$6 = { class: "card-header" };
+const _hoisted_2$5 = { class: "task-list" };
+const _hoisted_3$5 = { class: "card-header" };
+const _hoisted_4$5 = { class: "flow-steps" };
+const _hoisted_5$5 = { class: "card-header" };
+const _hoisted_6$5 = {
   key: 0,
   class: "tag-row"
 };
-const _hoisted_7$2 = { class: "card-footer" };
-const _sfc_main$3 = /* @__PURE__ */ defineComponent({
+const _hoisted_7$5 = { class: "card-footer" };
+const _sfc_main$6 = /* @__PURE__ */ defineComponent({
   __name: "KnowledgeCard",
   props: {
     block: {}
@@ -7789,10 +8673,10 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
         onPointerdown: _cache[0] || (_cache[0] = withModifiers(($event) => unref(store).selectBlock(__props.block.id), ["stop"]))
       }, [
         __props.block.type === "task" ? (openBlock(), createElementBlock(Fragment, { key: 0 }, [
-          createBaseVNode("header", _hoisted_1$3, [
+          createBaseVNode("header", _hoisted_1$6, [
             createBaseVNode("h2", null, toDisplayString(title.value), 1)
           ]),
-          createBaseVNode("ul", _hoisted_2$2, [
+          createBaseVNode("ul", _hoisted_2$5, [
             (openBlock(true), createElementBlock(Fragment, null, renderList(taskItems.value, (item, index) => {
               return openBlock(), createElementBlock("li", { key: item }, [
                 createBaseVNode("span", {
@@ -7812,11 +8696,11 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
             }), 128))
           ])
         ], 64)) : __props.block.type === "graph" ? (openBlock(), createElementBlock(Fragment, { key: 1 }, [
-          createBaseVNode("header", _hoisted_3$2, [
+          createBaseVNode("header", _hoisted_3$5, [
             createBaseVNode("h2", null, toDisplayString(title.value), 1),
             createVNode(unref(GitBranch), { size: 18 })
           ]),
-          createBaseVNode("div", _hoisted_4$2, [
+          createBaseVNode("div", _hoisted_4$5, [
             (openBlock(true), createElementBlock(Fragment, null, renderList(steps.value, (step, index) => {
               return openBlock(), createElementBlock("span", { key: step }, [
                 createBaseVNode("strong", null, toDisplayString(index + 1), 1),
@@ -7826,7 +8710,7 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
           ]),
           _cache[1] || (_cache[1] = createBaseVNode("p", { class: "graph-caption" }, "antv 图表", -1))
         ], 64)) : (openBlock(), createElementBlock(Fragment, { key: 2 }, [
-          createBaseVNode("header", _hoisted_5$2, [
+          createBaseVNode("header", _hoisted_5$5, [
             createBaseVNode("h2", null, toDisplayString(title.value), 1),
             __props.block.type === "research" ? (openBlock(), createBlock(unref(Sparkles), {
               key: 0,
@@ -7834,12 +8718,12 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
             })) : createCommentVNode("", true)
           ]),
           createBaseVNode("p", null, toDisplayString(summary.value), 1),
-          tags.value.length > 0 ? (openBlock(), createElementBlock("div", _hoisted_6$2, [
+          tags.value.length > 0 ? (openBlock(), createElementBlock("div", _hoisted_6$5, [
             (openBlock(true), createElementBlock(Fragment, null, renderList(tags.value, (tag) => {
               return openBlock(), createElementBlock("span", { key: tag }, toDisplayString(tag), 1);
             }), 128))
           ])) : createCommentVNode("", true),
-          createBaseVNode("footer", _hoisted_7$2, [
+          createBaseVNode("footer", _hoisted_7$5, [
             createBaseVNode("span", null, toDisplayString(__props.block.type === "research" ? "Research" : "Knowledge"), 1),
             createBaseVNode("span", {
               class: normalizeClass(["confidence-pill", unref(confidenceBand)(confidence.value)])
@@ -7853,11 +8737,11 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const _hoisted_1$2 = {
+const _hoisted_1$5 = {
   class: "canvas-minimap",
   "aria-label": "画布缩略图"
 };
-const _sfc_main$2 = /* @__PURE__ */ defineComponent({
+const _sfc_main$5 = /* @__PURE__ */ defineComponent({
   __name: "KnowledgeCanvas",
   setup(__props) {
     const store = useWorkspaceStore();
@@ -7954,11 +8838,11 @@ const _sfc_main$2 = /* @__PURE__ */ defineComponent({
               class: "block-frame",
               style: normalizeStyle(blockStyle(block))
             }, [
-              createVNode(_sfc_main$3, { block }, null, 8, ["block"])
+              createVNode(_sfc_main$6, { block }, null, 8, ["block"])
             ], 4);
           }), 128))
         ], 4),
-        createBaseVNode("div", _hoisted_1$2, [
+        createBaseVNode("div", _hoisted_1$5, [
           (openBlock(true), createElementBlock(Fragment, null, renderList(unref(store).blocks, (block) => {
             return openBlock(), createElementBlock("span", {
               key: block.id,
@@ -7972,57 +8856,328 @@ const _sfc_main$2 = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const _hoisted_1$1 = {
+const _hoisted_1$4 = ["onKeydown"];
+const _hoisted_2$4 = { class: "model-settings-head" };
+const _hoisted_3$4 = { class: "model-settings-head-text" };
+const _hoisted_4$4 = { class: "model-settings-warn" };
+const _hoisted_5$4 = { class: "model-settings-body" };
+const _hoisted_6$4 = {
+  class: "model-settings-nav",
+  "aria-label": "提供商"
+};
+const _hoisted_7$4 = ["onClick"];
+const _hoisted_8$4 = { key: 0 };
+const _hoisted_9$4 = {
+  key: 0,
+  class: "model-settings-form"
+};
+const _hoisted_10$3 = { class: "model-settings-notes" };
+const _hoisted_11$3 = { class: "model-settings-field" };
+const _hoisted_12$2 = { class: "model-settings-key-row" };
+const _hoisted_13$2 = ["placeholder"];
+const _hoisted_14$2 = {
+  key: 0,
+  class: "model-settings-field"
+};
+const _hoisted_15$2 = { class: "model-settings-field" };
+const _hoisted_16$2 = { id: "model-preset-list" };
+const _hoisted_17$2 = ["value"];
+const _hoisted_18$2 = { class: "model-settings-actions" };
+const _hoisted_19$2 = ["disabled"];
+const _hoisted_20$2 = ["disabled"];
+const _sfc_main$4 = /* @__PURE__ */ defineComponent({
+  __name: "ModelSettingsModal",
+  props: {
+    open: { type: Boolean }
+  },
+  emits: ["update:open"],
+  setup(__props, { emit: __emit }) {
+    const props = __props;
+    const emit2 = __emit;
+    const workspace = useWorkspaceStore();
+    const snapshot = /* @__PURE__ */ ref([]);
+    const selectedId = /* @__PURE__ */ ref(PROVIDER_TEMPLATES[0]?.id ?? "openai");
+    const apiKeyInput = /* @__PURE__ */ ref("");
+    const baseUrlInput = /* @__PURE__ */ ref("");
+    const modelInput = /* @__PURE__ */ ref("");
+    const saving = /* @__PURE__ */ ref(false);
+    const message = /* @__PURE__ */ ref(null);
+    const messageIsError = computed(() => {
+      if (!message.value) return false;
+      return message.value !== "已保存" && message.value !== "已清除 API Key";
+    });
+    const selectedTemplate = computed(() => PROVIDER_TEMPLATES.find((p2) => p2.id === selectedId.value));
+    const credential = computed(
+      () => snapshot.value.find((row) => row.providerId === selectedId.value)
+    );
+    function isProviderConfigured(id) {
+      return Boolean(snapshot.value.find((row) => row.providerId === id)?.hasApiKey);
+    }
+    function applyFormFromCredential() {
+      const template = selectedTemplate.value;
+      const cred = credential.value;
+      apiKeyInput.value = "";
+      baseUrlInput.value = cred?.baseUrl ?? template?.defaultBaseUrl ?? (template?.supportsCustomBaseUrl ? "" : "");
+      modelInput.value = cred?.model ?? template?.defaultModels[0] ?? "";
+    }
+    async function loadSnapshot() {
+      if (!window.beelite?.getLlmSettings) return;
+      const data = await window.beelite.getLlmSettings();
+      if (!data) return;
+      snapshot.value = data.providers;
+      applyFormFromCredential();
+    }
+    watch(
+      () => props.open,
+      (visible) => {
+        if (visible) {
+          message.value = null;
+          void loadSnapshot().then(() => applyFormFromCredential());
+        }
+      }
+    );
+    watch(selectedId, () => {
+      applyFormFromCredential();
+    });
+    function close() {
+      emit2("update:open", false);
+    }
+    async function save() {
+      if (!window.beelite?.setLlmProvider) return;
+      saving.value = true;
+      message.value = null;
+      try {
+        const payload = {
+          providerId: selectedId.value,
+          baseUrl: baseUrlInput.value.trim() ? baseUrlInput.value.trim() : null,
+          model: modelInput.value.trim() ? modelInput.value.trim() : null
+        };
+        if (apiKeyInput.value.trim().length > 0) {
+          payload.apiKey = apiKeyInput.value.trim();
+        }
+        await window.beelite.setLlmProvider(payload);
+        apiKeyInput.value = "";
+        await loadSnapshot();
+        await workspace.refreshLlmSettings();
+        message.value = "已保存";
+      } catch (error) {
+        message.value = error instanceof Error ? error.message : String(error);
+      } finally {
+        saving.value = false;
+      }
+    }
+    async function clearKey() {
+      if (!window.beelite?.setLlmProvider) return;
+      saving.value = true;
+      message.value = null;
+      try {
+        await window.beelite.setLlmProvider({
+          providerId: selectedId.value,
+          apiKey: null
+        });
+        apiKeyInput.value = "";
+        await loadSnapshot();
+        await workspace.refreshLlmSettings();
+        message.value = "已清除 API Key";
+      } catch (error) {
+        message.value = error instanceof Error ? error.message : String(error);
+      } finally {
+        saving.value = false;
+      }
+    }
+    return (_ctx, _cache) => {
+      return openBlock(), createBlock(Teleport, { to: "body" }, [
+        __props.open ? (openBlock(), createElementBlock("div", {
+          key: 0,
+          class: "model-settings-overlay",
+          role: "presentation",
+          onClick: withModifiers(close, ["self"])
+        }, [
+          createBaseVNode("div", {
+            class: "model-settings-dialog",
+            role: "dialog",
+            "aria-modal": "true",
+            "aria-labelledby": "model-settings-title",
+            onKeydown: withKeys(withModifiers(close, ["prevent"]), ["escape"])
+          }, [
+            createBaseVNode("header", _hoisted_2$4, [
+              createBaseVNode("div", _hoisted_3$4, [
+                createVNode(unref(Settings2), { size: 19 }),
+                _cache[3] || (_cache[3] = createBaseVNode("div", null, [
+                  createBaseVNode("h2", { id: "model-settings-title" }, "模型与 API"),
+                  createBaseVNode("p", null, "密钥保存在本机 SQLite；调用模型时将从此处读取。")
+                ], -1))
+              ]),
+              createBaseVNode("button", {
+                type: "button",
+                class: "model-settings-close",
+                "aria-label": "关闭",
+                onClick: close
+              }, [
+                createVNode(unref(X), { size: 18 })
+              ])
+            ]),
+            createBaseVNode("p", _hoisted_4$4, [
+              createVNode(unref(Shield), { size: 15 }),
+              _cache[4] || (_cache[4] = createTextVNode(" API Key 以明文保存在本机用户目录下的 ", -1)),
+              _cache[5] || (_cache[5] = createBaseVNode("code", null, "beelite.sqlite", -1)),
+              _cache[6] || (_cache[6] = createTextVNode(" 中，请勿备份或共享该文件。 ", -1))
+            ]),
+            createBaseVNode("div", _hoisted_5$4, [
+              createBaseVNode("nav", _hoisted_6$4, [
+                (openBlock(true), createElementBlock(Fragment, null, renderList(unref(PROVIDER_TEMPLATES), (template) => {
+                  return openBlock(), createElementBlock("button", {
+                    key: template.id,
+                    type: "button",
+                    class: normalizeClass(["model-settings-nav-item", { active: template.id === selectedId.value }]),
+                    onClick: ($event) => selectedId.value = template.id
+                  }, [
+                    createBaseVNode("span", null, toDisplayString(template.label), 1),
+                    isProviderConfigured(template.id) ? (openBlock(), createElementBlock("small", _hoisted_8$4, "已配置")) : createCommentVNode("", true)
+                  ], 10, _hoisted_7$4);
+                }), 128))
+              ]),
+              selectedTemplate.value ? (openBlock(), createElementBlock("div", _hoisted_9$4, [
+                createBaseVNode("p", _hoisted_10$3, toDisplayString(selectedTemplate.value.notes), 1),
+                createBaseVNode("label", _hoisted_11$3, [
+                  _cache[7] || (_cache[7] = createBaseVNode("span", null, "API Key", -1)),
+                  createBaseVNode("div", _hoisted_12$2, [
+                    createVNode(unref(KeyRound), {
+                      size: 15,
+                      class: "model-settings-key-icon"
+                    }),
+                    withDirectives(createBaseVNode("input", {
+                      "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => apiKeyInput.value = $event),
+                      type: "password",
+                      autocomplete: "off",
+                      placeholder: credential.value?.hasApiKey ? "留空保留已保存的密钥" : "粘贴 API Key（本地加密存储）"
+                    }, null, 8, _hoisted_13$2), [
+                      [vModelText, apiKeyInput.value]
+                    ])
+                  ])
+                ]),
+                selectedTemplate.value.supportsCustomBaseUrl ? (openBlock(), createElementBlock("label", _hoisted_14$2, [
+                  _cache[8] || (_cache[8] = createBaseVNode("span", null, "Base URL", -1)),
+                  withDirectives(createBaseVNode("input", {
+                    "onUpdate:modelValue": _cache[1] || (_cache[1] = ($event) => baseUrlInput.value = $event),
+                    type: "url",
+                    placeholder: "可选，留空则清除自定义地址"
+                  }, null, 512), [
+                    [vModelText, baseUrlInput.value]
+                  ])
+                ])) : createCommentVNode("", true),
+                createBaseVNode("label", _hoisted_15$2, [
+                  _cache[9] || (_cache[9] = createBaseVNode("span", null, "默认模型 ID", -1)),
+                  withDirectives(createBaseVNode("input", {
+                    "onUpdate:modelValue": _cache[2] || (_cache[2] = ($event) => modelInput.value = $event),
+                    type: "text",
+                    list: "model-preset-list"
+                  }, null, 512), [
+                    [vModelText, modelInput.value]
+                  ]),
+                  createBaseVNode("datalist", _hoisted_16$2, [
+                    (openBlock(true), createElementBlock(Fragment, null, renderList(selectedTemplate.value.defaultModels, (m) => {
+                      return openBlock(), createElementBlock("option", {
+                        key: m,
+                        value: m
+                      }, null, 8, _hoisted_17$2);
+                    }), 128))
+                  ]),
+                  _cache[10] || (_cache[10] = createBaseVNode("small", { class: "model-settings-hint" }, "用于路由表中指向该提供商的任务；可与下拉预设一致或自定义。", -1))
+                ]),
+                createBaseVNode("div", _hoisted_18$2, [
+                  createBaseVNode("button", {
+                    type: "button",
+                    class: "btn-secondary",
+                    disabled: saving.value || !credential.value?.hasApiKey,
+                    onClick: clearKey
+                  }, " 清除密钥 ", 8, _hoisted_19$2),
+                  createBaseVNode("button", {
+                    type: "button",
+                    class: "btn-primary",
+                    disabled: saving.value,
+                    onClick: save
+                  }, toDisplayString(saving.value ? "保存中…" : "保存"), 9, _hoisted_20$2)
+                ]),
+                message.value ? (openBlock(), createElementBlock("p", {
+                  key: 1,
+                  class: normalizeClass(["model-settings-message", { error: messageIsError.value }])
+                }, toDisplayString(message.value), 3)) : createCommentVNode("", true)
+              ])) : createCommentVNode("", true)
+            ])
+          ], 40, _hoisted_1$4)
+        ])) : createCommentVNode("", true)
+      ]);
+    };
+  }
+});
+const _hoisted_1$3 = {
   class: "provider-dock",
   "aria-label": "AI 状态"
 };
-const _hoisted_2$1 = {
+const _hoisted_2$3 = {
   class: "dock-action active",
   title: "AI Copilot"
 };
-const _hoisted_3$1 = {
+const _hoisted_3$3 = {
   class: "dock-action",
   title: "图谱提议"
 };
-const _hoisted_4$1 = {
+const _hoisted_4$3 = {
   class: "dock-action",
   title: "本地数据"
 };
-const _hoisted_5$1 = {
+const _hoisted_5$3 = {
   class: "runtime-panel",
   "aria-label": "运行时状态"
 };
-const _hoisted_6$1 = { class: "route-list" };
-const _hoisted_7$1 = { class: "proposal-strip" };
-const _sfc_main$1 = /* @__PURE__ */ defineComponent({
+const _hoisted_6$3 = { class: "runtime-panel-header" };
+const _hoisted_7$3 = { class: "runtime-panel-heading" };
+const _hoisted_8$3 = { class: "route-list" };
+const _hoisted_9$3 = { class: "proposal-strip" };
+const _sfc_main$3 = /* @__PURE__ */ defineComponent({
   __name: "ProviderDock",
   setup(__props) {
     const store = useWorkspaceStore();
     const providerCount = computed(() => store.providerTemplates.length);
+    const configuredCount = computed(
+      () => store.llmSettings?.providers.filter((p2) => p2.hasApiKey).length ?? 0
+    );
     const proposalNodeCount = computed(() => store.graphProposal.nodes.length);
     const proposalEdgeCount = computed(() => store.graphProposal.edges.length);
     return (_ctx, _cache) => {
       return openBlock(), createElementBlock(Fragment, null, [
-        createBaseVNode("aside", _hoisted_1$1, [
-          createBaseVNode("div", _hoisted_2$1, [
+        createBaseVNode("aside", _hoisted_1$3, [
+          createBaseVNode("div", _hoisted_2$3, [
             createVNode(unref(Sparkles), { size: 19 })
           ]),
-          createBaseVNode("div", _hoisted_3$1, [
+          createBaseVNode("div", _hoisted_3$3, [
             createVNode(unref(GitPullRequestDraft), { size: 19 })
           ]),
-          createBaseVNode("div", _hoisted_4$1, [
+          createBaseVNode("div", _hoisted_4$3, [
             createVNode(unref(Database), { size: 19 })
           ])
         ]),
-        createBaseVNode("section", _hoisted_5$1, [
-          createBaseVNode("header", null, [
-            createVNode(unref(BrainCircuit), { size: 18 }),
-            createBaseVNode("div", null, [
-              _cache[0] || (_cache[0] = createBaseVNode("strong", null, "pi-mono Runtime", -1)),
-              createBaseVNode("span", null, toDisplayString(providerCount.value) + " providers ready", 1)
+        createBaseVNode("section", _hoisted_5$3, [
+          createBaseVNode("header", _hoisted_6$3, [
+            createBaseVNode("div", _hoisted_7$3, [
+              createVNode(unref(BrainCircuit), { size: 18 }),
+              createBaseVNode("div", null, [
+                _cache[1] || (_cache[1] = createBaseVNode("strong", null, "模型路由", -1)),
+                createBaseVNode("span", null, toDisplayString(configuredCount.value) + " / " + toDisplayString(providerCount.value) + " 提供商已配置密钥", 1)
+              ])
+            ]),
+            createBaseVNode("button", {
+              type: "button",
+              class: "runtime-panel-settings",
+              "aria-label": "模型与 API 配置",
+              title: "模型与 API 配置",
+              onClick: _cache[0] || (_cache[0] = ($event) => unref(store).setModelSettingsOpen(true))
+            }, [
+              createVNode(unref(Settings2), { size: 17 })
             ])
           ]),
-          createBaseVNode("div", _hoisted_6$1, [
+          createBaseVNode("div", _hoisted_8$3, [
             (openBlock(true), createElementBlock(Fragment, null, renderList(unref(store).activeModelRoutes, (route) => {
               return openBlock(), createElementBlock("div", {
                 key: route.task,
@@ -8033,34 +9188,683 @@ const _sfc_main$1 = /* @__PURE__ */ defineComponent({
               ]);
             }), 128))
           ]),
-          createBaseVNode("div", _hoisted_7$1, [
+          createBaseVNode("div", _hoisted_9$3, [
             createVNode(unref(CircleCheck), { size: 17 }),
             createBaseVNode("span", null, toDisplayString(proposalNodeCount.value) + " nodes · " + toDisplayString(proposalEdgeCount.value) + " edges · draft", 1)
           ])
-        ])
+        ]),
+        createVNode(_sfc_main$4, {
+          open: unref(store).modelSettingsOpen,
+          "onUpdate:open": unref(store).setModelSettingsOpen
+        }, null, 8, ["open", "onUpdate:open"])
       ], 64);
     };
   }
 });
-const _hoisted_1 = { class: "app-shell" };
+const _hoisted_1$2 = {
+  class: "research-panel",
+  "aria-label": "联网搜索"
+};
+const _hoisted_2$2 = { key: 0 };
+const _hoisted_3$2 = { key: 1 };
+const _hoisted_4$2 = { class: "research-config" };
+const _hoisted_5$2 = { class: "research-field" };
+const _hoisted_6$2 = ["disabled"];
+const _hoisted_7$2 = ["value"];
+const _hoisted_8$2 = {
+  key: 0,
+  class: "research-provider-hint"
+};
+const _hoisted_9$2 = { class: "research-field" };
+const _hoisted_10$2 = ["disabled", "placeholder"];
+const _hoisted_11$2 = { class: "research-config-actions" };
+const _hoisted_12$1 = ["disabled"];
+const _hoisted_13$1 = ["disabled"];
+const _hoisted_14$1 = { class: "research-search-row" };
+const _hoisted_15$1 = ["disabled", "onKeydown"];
+const _hoisted_16$1 = ["disabled"];
+const _hoisted_17$1 = {
+  key: 0,
+  class: "research-error"
+};
+const _hoisted_18$1 = {
+  key: 1,
+  class: "research-note"
+};
+const _hoisted_19$1 = {
+  key: 2,
+  class: "research-hits"
+};
+const _hoisted_20$1 = ["onClick"];
+const _hoisted_21$1 = { class: "research-hit-url" };
+const _hoisted_22 = { class: "research-hit-snippet" };
+const _hoisted_23 = { class: "research-hit-actions" };
+const _hoisted_24 = ["disabled", "onClick"];
+const _hoisted_25 = {
+  key: 0,
+  class: "research-fetch-error"
+};
+const _hoisted_26 = {
+  key: 0,
+  class: "research-fetch-title"
+};
+const _hoisted_27 = {
+  key: 1,
+  class: "research-fetch-note"
+};
+const _hoisted_28 = { class: "research-fetch-body" };
+const _sfc_main$2 = /* @__PURE__ */ defineComponent({
+  __name: "ResearchPanel",
+  setup(__props) {
+    const PROVIDERS = [
+      {
+        id: "browser",
+        label: "浏览器 (Playwright / CDP)",
+        hint: "无 API Key 时走无头浏览器；先 DuckDuckGo Lite，若人机墙则尝试 Bing。二者均可能被拦截，稳定搜索请用下方 API 提供商。"
+      },
+      {
+        id: "brave",
+        label: "Brave Search",
+        hint: "https://brave.com/search/api/"
+      },
+      {
+        id: "tavily",
+        label: "Tavily",
+        hint: "https://tavily.com/"
+      },
+      {
+        id: "serper",
+        label: "Serper (Google)",
+        hint: "https://serper.dev/"
+      }
+    ];
+    const store = useWorkspaceStore();
+    const providerDraft = /* @__PURE__ */ ref("brave");
+    const apiKeyDraft = /* @__PURE__ */ ref("");
+    const queryDraft = /* @__PURE__ */ ref("");
+    const searching = /* @__PURE__ */ ref(false);
+    const saving = /* @__PURE__ */ ref(false);
+    const hits = /* @__PURE__ */ ref([]);
+    const panelError = /* @__PURE__ */ ref(null);
+    const searchNote = /* @__PURE__ */ ref(null);
+    const electronOk = computed(() => Boolean(window.beelite));
+    const providerMeta = computed(() => PROVIDERS.find((p2) => p2.id === providerDraft.value));
+    const credentialHint = computed(() => {
+      const s = store.researchSettings;
+      if (!s) return "";
+      if (s.provider === "browser") return "本地 Chromium（无需搜索 API Key）";
+      return s.hasApiKey ? "已配置搜索密钥" : "未配置 API Key";
+    });
+    const searchBlocked = computed(() => {
+      const s = store.researchSettings;
+      if (!s) return true;
+      if (!s.needsSearchApiKey) return false;
+      return !s.hasApiKey;
+    });
+    const fetchStates = /* @__PURE__ */ reactive({});
+    function syncDraftFromStore() {
+      const s = store.researchSettings;
+      if (s) providerDraft.value = s.provider;
+    }
+    watch(
+      () => store.researchSettings?.provider,
+      () => syncDraftFromStore()
+    );
+    watch(providerDraft, async (next) => {
+      if (!window.beelite?.setResearchSettings) return;
+      if (!store.researchSettings || next === store.researchSettings.provider) return;
+      await window.beelite.setResearchSettings({ provider: next });
+      await store.refreshResearchSettings();
+    });
+    onMounted(() => {
+      syncDraftFromStore();
+    });
+    async function saveCredentials() {
+      if (!window.beelite?.setResearchSettings) return;
+      saving.value = true;
+      panelError.value = null;
+      searchNote.value = null;
+      try {
+        await window.beelite.setResearchSettings({
+          provider: providerDraft.value,
+          ...apiKeyDraft.value.trim().length > 0 ? { apiKey: apiKeyDraft.value.trim() } : {}
+        });
+        apiKeyDraft.value = "";
+        await store.refreshResearchSettings();
+        searchNote.value = "已保存搜索配置";
+      } catch (error) {
+        panelError.value = error instanceof Error ? error.message : String(error);
+      } finally {
+        saving.value = false;
+      }
+    }
+    async function clearCredentials() {
+      if (!window.beelite?.setResearchSettings) return;
+      saving.value = true;
+      panelError.value = null;
+      searchNote.value = null;
+      try {
+        await window.beelite.setResearchSettings({ apiKey: null });
+        apiKeyDraft.value = "";
+        await store.refreshResearchSettings();
+        searchNote.value = "已清除搜索 API Key";
+      } catch (error) {
+        panelError.value = error instanceof Error ? error.message : String(error);
+      } finally {
+        saving.value = false;
+      }
+    }
+    async function runSearch() {
+      panelError.value = null;
+      searchNote.value = null;
+      hits.value = [];
+      searching.value = true;
+      try {
+        const result = await store.researchSearch({ query: queryDraft.value, count: 12 });
+        if (!result.ok) {
+          panelError.value = result.error ?? "搜索失败";
+          return;
+        }
+        hits.value = result.results;
+        if (result.results.length === 0) {
+          if (result.provider === "browser" && result.browserDebug) {
+            const head = result.browserDebug.split("\n").slice(0, 6).join(" · ");
+            searchNote.value = `未返回结果。${head.slice(0, 420)}…（完整多行见主进程终端 [research-browser]）`;
+          } else {
+            searchNote.value = "未返回结果，可尝试更换关键词或提供商";
+          }
+        }
+      } finally {
+        searching.value = false;
+      }
+    }
+    async function openHit(url) {
+      await window.beelite?.openExternal(url);
+    }
+    async function fetchHitBody(url) {
+      fetchStates[url] = { loading: true };
+      try {
+        const r = await store.researchFetchPage({ url });
+        if (!r.ok) {
+          fetchStates[url] = { error: r.error ?? "抓取失败" };
+          return;
+        }
+        fetchStates[url] = {
+          title: r.title,
+          text: r.text ?? "",
+          truncated: r.truncated
+        };
+      } catch (error) {
+        fetchStates[url] = {
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    }
+    return (_ctx, _cache) => {
+      return openBlock(), createElementBlock("section", _hoisted_1$2, [
+        createBaseVNode("header", null, [
+          createVNode(unref(Globe), { size: 17 }),
+          createBaseVNode("div", null, [
+            _cache[4] || (_cache[4] = createBaseVNode("strong", null, "Research · 联网搜索", -1)),
+            electronOk.value ? (openBlock(), createElementBlock("span", _hoisted_2$2, toDisplayString(credentialHint.value), 1)) : (openBlock(), createElementBlock("span", _hoisted_3$2, "Electron IPC 未连接"))
+          ])
+        ]),
+        createBaseVNode("div", _hoisted_4$2, [
+          createBaseVNode("label", _hoisted_5$2, [
+            _cache[5] || (_cache[5] = createBaseVNode("span", null, "搜索后端", -1)),
+            withDirectives(createBaseVNode("select", {
+              "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => providerDraft.value = $event),
+              disabled: !electronOk.value || saving.value
+            }, [
+              (openBlock(), createElementBlock(Fragment, null, renderList(PROVIDERS, (p2) => {
+                return createBaseVNode("option", {
+                  key: p2.id,
+                  value: p2.id
+                }, toDisplayString(p2.label), 9, _hoisted_7$2);
+              }), 64))
+            ], 8, _hoisted_6$2), [
+              [vModelSelect, providerDraft.value]
+            ])
+          ]),
+          providerMeta.value ? (openBlock(), createElementBlock("p", _hoisted_8$2, [
+            providerDraft.value === "browser" ? (openBlock(), createElementBlock(Fragment, { key: 0 }, [
+              createTextVNode(toDisplayString(providerMeta.value.hint), 1)
+            ], 64)) : (openBlock(), createElementBlock(Fragment, { key: 1 }, [
+              _cache[6] || (_cache[6] = createTextVNode(" 获取密钥： ", -1)),
+              createBaseVNode("a", {
+                href: "#",
+                onClick: _cache[1] || (_cache[1] = withModifiers(($event) => openHit(providerMeta.value.hint), ["prevent"]))
+              }, toDisplayString(providerMeta.value.hint), 1)
+            ], 64))
+          ])) : createCommentVNode("", true),
+          providerDraft.value !== "browser" ? (openBlock(), createElementBlock(Fragment, { key: 1 }, [
+            createBaseVNode("label", _hoisted_9$2, [
+              _cache[7] || (_cache[7] = createBaseVNode("span", null, "API Key", -1)),
+              withDirectives(createBaseVNode("input", {
+                "onUpdate:modelValue": _cache[2] || (_cache[2] = ($event) => apiKeyDraft.value = $event),
+                type: "password",
+                autocomplete: "off",
+                disabled: !electronOk.value || saving.value,
+                placeholder: unref(store).researchSettings?.hasApiKey ? "留空保留已有密钥" : "粘贴密钥"
+              }, null, 8, _hoisted_10$2), [
+                [vModelText, apiKeyDraft.value]
+              ])
+            ]),
+            createBaseVNode("div", _hoisted_11$2, [
+              createBaseVNode("button", {
+                type: "button",
+                class: "research-btn",
+                disabled: !electronOk.value || saving.value,
+                onClick: saveCredentials
+              }, [
+                createVNode(unref(Save), { size: 15 }),
+                _cache[8] || (_cache[8] = createTextVNode(" 保存 ", -1))
+              ], 8, _hoisted_12$1),
+              createBaseVNode("button", {
+                type: "button",
+                class: "research-btn danger",
+                disabled: !electronOk.value || saving.value || !unref(store).researchSettings?.hasApiKey,
+                onClick: clearCredentials
+              }, [
+                createVNode(unref(Trash2), { size: 15 }),
+                _cache[9] || (_cache[9] = createTextVNode(" 清除密钥 ", -1))
+              ], 8, _hoisted_13$1)
+            ])
+          ], 64)) : createCommentVNode("", true)
+        ]),
+        createBaseVNode("div", _hoisted_14$1, [
+          withDirectives(createBaseVNode("input", {
+            "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => queryDraft.value = $event),
+            class: "research-query",
+            type: "search",
+            placeholder: "输入问题或关键词…",
+            disabled: !electronOk.value || searching.value || searchBlocked.value,
+            onKeydown: withKeys(withModifiers(runSearch, ["prevent"]), ["enter"])
+          }, null, 40, _hoisted_15$1), [
+            [vModelText, queryDraft.value]
+          ]),
+          createBaseVNode("button", {
+            type: "button",
+            class: "research-search-btn",
+            disabled: !electronOk.value || searching.value || searchBlocked.value,
+            onClick: runSearch
+          }, [
+            searching.value ? (openBlock(), createBlock(unref(LoaderCircle), {
+              key: 0,
+              class: "research-spin",
+              size: 17
+            })) : (openBlock(), createBlock(unref(Search), {
+              key: 1,
+              size: 17
+            }))
+          ], 8, _hoisted_16$1)
+        ]),
+        panelError.value ? (openBlock(), createElementBlock("p", _hoisted_17$1, toDisplayString(panelError.value), 1)) : searchNote.value ? (openBlock(), createElementBlock("p", _hoisted_18$1, toDisplayString(searchNote.value), 1)) : createCommentVNode("", true),
+        hits.value.length > 0 ? (openBlock(), createElementBlock("ul", _hoisted_19$1, [
+          (openBlock(true), createElementBlock(Fragment, null, renderList(hits.value, (hit, index) => {
+            return openBlock(), createElementBlock("li", {
+              key: `${hit.url}-${index}`,
+              class: "research-hit"
+            }, [
+              createBaseVNode("button", {
+                type: "button",
+                class: "research-hit-link",
+                onClick: ($event) => openHit(hit.url)
+              }, toDisplayString(hit.title), 9, _hoisted_20$1),
+              createBaseVNode("span", _hoisted_21$1, toDisplayString(hit.url), 1),
+              createBaseVNode("p", _hoisted_22, toDisplayString(hit.snippet), 1),
+              createBaseVNode("div", _hoisted_23, [
+                createBaseVNode("button", {
+                  type: "button",
+                  class: "research-fetch-btn",
+                  disabled: !electronOk.value || fetchStates[hit.url]?.loading,
+                  onClick: ($event) => fetchHitBody(hit.url)
+                }, [
+                  fetchStates[hit.url]?.loading ? (openBlock(), createBlock(unref(LoaderCircle), {
+                    key: 0,
+                    class: "research-spin",
+                    size: 14
+                  })) : (openBlock(), createBlock(unref(FileText), {
+                    key: 1,
+                    size: 14
+                  })),
+                  _cache[10] || (_cache[10] = createTextVNode(" 抓取正文 (CDP) ", -1))
+                ], 8, _hoisted_24)
+              ]),
+              fetchStates[hit.url]?.error ? (openBlock(), createElementBlock("p", _hoisted_25, toDisplayString(fetchStates[hit.url]?.error), 1)) : fetchStates[hit.url]?.text !== void 0 ? (openBlock(), createElementBlock(Fragment, { key: 1 }, [
+                fetchStates[hit.url]?.title ? (openBlock(), createElementBlock("p", _hoisted_26, toDisplayString(fetchStates[hit.url]?.title), 1)) : createCommentVNode("", true),
+                fetchStates[hit.url]?.truncated ? (openBlock(), createElementBlock("p", _hoisted_27, "正文已截断（达上限）")) : createCommentVNode("", true),
+                createBaseVNode("pre", _hoisted_28, toDisplayString(fetchStates[hit.url]?.text), 1)
+              ], 64)) : createCommentVNode("", true)
+            ]);
+          }), 128))
+        ])) : createCommentVNode("", true)
+      ]);
+    };
+  }
+});
+const _hoisted_1$1 = { class: "research-test" };
+const _hoisted_2$1 = { class: "research-test__bar" };
+const _hoisted_3$1 = { class: "research-test__title" };
+const _hoisted_4$1 = ["data-ok"];
+const _hoisted_5$1 = { class: "research-test__grid" };
+const _hoisted_6$1 = { class: "research-test__card" };
+const _hoisted_7$1 = { class: "research-test__row" };
+const _hoisted_8$1 = ["disabled"];
+const _hoisted_9$1 = ["disabled"];
+const _hoisted_10$1 = { class: "research-test__pre" };
+const _hoisted_11$1 = { class: "research-test__card" };
+const _hoisted_12 = { class: "research-test__row research-test__row--wrap" };
+const _hoisted_13 = { class: "research-test__grow" };
+const _hoisted_14 = ["disabled"];
+const _hoisted_15 = { class: "research-test__card" };
+const _hoisted_16 = { class: "research-test__row research-test__row--wrap" };
+const _hoisted_17 = { class: "research-test__grow" };
+const _hoisted_18 = ["disabled"];
+const _hoisted_19 = { class: "research-test__card research-test__card--wide" };
+const _hoisted_20 = { class: "research-test__logs" };
+const _hoisted_21 = {
+  key: 0,
+  class: "research-test__logs-empty"
+};
+const _sfc_main$1 = /* @__PURE__ */ defineComponent({
+  __name: "ResearchTestPage",
+  emits: ["exit"],
+  setup(__props, { emit: __emit }) {
+    const emit2 = __emit;
+    const store = useWorkspaceStore();
+    const logs = /* @__PURE__ */ ref([]);
+    const busy = /* @__PURE__ */ ref(null);
+    const queryDraft = /* @__PURE__ */ ref("playwright electron");
+    const countDraft = /* @__PURE__ */ ref(5);
+    const fetchUrlDraft = /* @__PURE__ */ ref("https://example.com");
+    const providerPick = /* @__PURE__ */ ref("browser");
+    function log(line) {
+      const t = (/* @__PURE__ */ new Date()).toISOString().slice(11, 23);
+      logs.value = [`[${t}] ${line}`, ...logs.value].slice(0, 80);
+    }
+    const electronOk = computed(() => Boolean(window.beelite?.researchSearch));
+    const settingsJson = computed(
+      () => store.researchSettings ? JSON.stringify(store.researchSettings, null, 2) : "（尚未加载）"
+    );
+    onMounted(() => {
+      log(`页面就绪；Electron IPC: ${electronOk.value ? "可用" : "不可用"}`);
+      void store.refreshResearchSettings().then(() => log("已拉取 research 设置快照"));
+    });
+    function exit() {
+      emit2("exit");
+    }
+    async function refreshSettings() {
+      busy.value = "settings";
+      log("refreshResearchSettings …");
+      try {
+        await store.refreshResearchSettings();
+        log(`设置: ${settingsJson.value.replace(/\s+/g, " ").slice(0, 200)}…`);
+      } catch (e) {
+        log(`错误: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        busy.value = null;
+      }
+    }
+    async function applyProvider() {
+      if (!window.beelite?.setResearchSettings) {
+        log("setResearchSettings 不可用");
+        return;
+      }
+      busy.value = "settings";
+      log(`切换提供商 → ${providerPick.value}`);
+      try {
+        await window.beelite.setResearchSettings({ provider: providerPick.value });
+        await store.refreshResearchSettings();
+        log("提供商已保存");
+      } catch (e) {
+        log(`错误: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        busy.value = null;
+      }
+    }
+    async function runSearch() {
+      busy.value = "search";
+      const q = queryDraft.value.trim();
+      log(`researchSearch query="${q}" count=${countDraft.value}`);
+      try {
+        const started = performance.now();
+        const result = await store.researchSearch({ query: q, count: countDraft.value });
+        const ms = Math.round(performance.now() - started);
+        log(`完成 ${ms}ms ok=${result.ok} hits=${result.results?.length ?? 0}`);
+        if (!result.ok) log(`搜索失败: ${result.error ?? "unknown"}`);
+        else if (result.results[0]) log(`首条: ${result.results[0].title} → ${result.results[0].url}`);
+        if (result.browserDebug) {
+          log("── browser 诊断（主进程终端亦有 [research-browser] 日志）──");
+          for (const line of result.browserDebug.split("\n")) {
+            if (line.trim().length > 0) log(line);
+          }
+        }
+      } catch (e) {
+        log(`异常: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        busy.value = null;
+      }
+    }
+    async function runFetch() {
+      busy.value = "fetch";
+      const url = fetchUrlDraft.value.trim();
+      log(`researchFetchPage url="${url}"`);
+      try {
+        const started = performance.now();
+        const result = await store.researchFetchPage({ url, maxChars: 8e3 });
+        const ms = Math.round(performance.now() - started);
+        log(`完成 ${ms}ms ok=${result.ok} truncated=${Boolean(result.truncated)}`);
+        if (!result.ok) log(`抓取失败: ${result.error ?? "unknown"}`);
+        else log(`标题: ${result.title ?? "（空）"} 正文长度: ${(result.text ?? "").length}`);
+      } catch (e) {
+        log(`异常: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        busy.value = null;
+      }
+    }
+    function clearLogs() {
+      logs.value = [];
+      log("日志已清空");
+    }
+    return (_ctx, _cache) => {
+      return openBlock(), createElementBlock("div", _hoisted_1$1, [
+        createBaseVNode("header", _hoisted_2$1, [
+          createBaseVNode("button", {
+            type: "button",
+            class: "research-test__back",
+            onClick: exit
+          }, [
+            createVNode(unref(ArrowLeft), { size: 18 }),
+            _cache[4] || (_cache[4] = createTextVNode(" 返回应用 ", -1))
+          ]),
+          createBaseVNode("div", _hoisted_3$1, [
+            createVNode(unref(FlaskConical), {
+              size: 20,
+              "aria-hidden": "true"
+            }),
+            _cache[5] || (_cache[5] = createBaseVNode("span", null, "Research 连通性测试", -1))
+          ]),
+          createBaseVNode("span", {
+            class: "research-test__pill",
+            "data-ok": electronOk.value
+          }, toDisplayString(electronOk.value ? "IPC 正常" : "非 Electron / 无 preload"), 9, _hoisted_4$1)
+        ]),
+        createBaseVNode("div", _hoisted_5$1, [
+          createBaseVNode("section", _hoisted_6$1, [
+            _cache[9] || (_cache[9] = createBaseVNode("h2", null, "环境与设置", -1)),
+            _cache[10] || (_cache[10] = createBaseVNode("p", { class: "research-test__hint" }, " 将提供商切到「browser」可不配 API Key；其它提供商需先在正式 Research 面板保存密钥。 ", -1)),
+            createBaseVNode("div", _hoisted_7$1, [
+              createBaseVNode("label", null, [
+                _cache[7] || (_cache[7] = createTextVNode(" 提供商 ", -1)),
+                withDirectives(createBaseVNode("select", {
+                  "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => providerPick.value = $event)
+                }, [..._cache[6] || (_cache[6] = [
+                  createBaseVNode("option", { value: "browser" }, "browser", -1),
+                  createBaseVNode("option", { value: "brave" }, "brave", -1),
+                  createBaseVNode("option", { value: "tavily" }, "tavily", -1),
+                  createBaseVNode("option", { value: "serper" }, "serper", -1)
+                ])], 512), [
+                  [vModelSelect, providerPick.value]
+                ])
+              ]),
+              createBaseVNode("button", {
+                type: "button",
+                class: "research-test__btn",
+                disabled: Boolean(busy.value) || !electronOk.value,
+                onClick: applyProvider
+              }, [
+                busy.value === "settings" ? (openBlock(), createBlock(unref(LoaderCircle), {
+                  key: 0,
+                  class: "research-test__spin",
+                  size: 16
+                })) : createCommentVNode("", true),
+                _cache[8] || (_cache[8] = createTextVNode(" 应用提供商 ", -1))
+              ], 8, _hoisted_8$1),
+              createBaseVNode("button", {
+                type: "button",
+                class: "research-test__btn research-test__btn--ghost",
+                disabled: Boolean(busy.value) || !electronOk.value,
+                onClick: refreshSettings
+              }, " 刷新设置 ", 8, _hoisted_9$1)
+            ]),
+            createBaseVNode("pre", _hoisted_10$1, toDisplayString(settingsJson.value), 1)
+          ]),
+          createBaseVNode("section", _hoisted_11$1, [
+            _cache[14] || (_cache[14] = createBaseVNode("h2", null, "搜索", -1)),
+            createBaseVNode("div", _hoisted_12, [
+              createBaseVNode("label", _hoisted_13, [
+                _cache[11] || (_cache[11] = createTextVNode(" 关键词 ", -1)),
+                withDirectives(createBaseVNode("input", {
+                  "onUpdate:modelValue": _cache[1] || (_cache[1] = ($event) => queryDraft.value = $event),
+                  type: "search",
+                  autocomplete: "off"
+                }, null, 512), [
+                  [vModelText, queryDraft.value]
+                ])
+              ]),
+              createBaseVNode("label", null, [
+                _cache[12] || (_cache[12] = createTextVNode(" 条数 ", -1)),
+                withDirectives(createBaseVNode("input", {
+                  "onUpdate:modelValue": _cache[2] || (_cache[2] = ($event) => countDraft.value = $event),
+                  type: "number",
+                  min: "1",
+                  max: "20"
+                }, null, 512), [
+                  [
+                    vModelText,
+                    countDraft.value,
+                    void 0,
+                    { number: true }
+                  ]
+                ])
+              ]),
+              createBaseVNode("button", {
+                type: "button",
+                class: "research-test__btn research-test__btn--primary",
+                disabled: Boolean(busy.value) || !electronOk.value,
+                onClick: runSearch
+              }, [
+                busy.value === "search" ? (openBlock(), createBlock(unref(LoaderCircle), {
+                  key: 0,
+                  class: "research-test__spin",
+                  size: 16
+                })) : (openBlock(), createBlock(unref(Play), {
+                  key: 1,
+                  size: 16
+                })),
+                _cache[13] || (_cache[13] = createTextVNode(" 执行 researchSearch ", -1))
+              ], 8, _hoisted_14)
+            ])
+          ]),
+          createBaseVNode("section", _hoisted_15, [
+            _cache[17] || (_cache[17] = createBaseVNode("h2", null, "抓取正文", -1)),
+            createBaseVNode("div", _hoisted_16, [
+              createBaseVNode("label", _hoisted_17, [
+                _cache[15] || (_cache[15] = createTextVNode(" URL ", -1)),
+                withDirectives(createBaseVNode("input", {
+                  "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => fetchUrlDraft.value = $event),
+                  type: "url",
+                  autocomplete: "off"
+                }, null, 512), [
+                  [vModelText, fetchUrlDraft.value]
+                ])
+              ]),
+              createBaseVNode("button", {
+                type: "button",
+                class: "research-test__btn research-test__btn--primary",
+                disabled: Boolean(busy.value) || !electronOk.value,
+                onClick: runFetch
+              }, [
+                busy.value === "fetch" ? (openBlock(), createBlock(unref(LoaderCircle), {
+                  key: 0,
+                  class: "research-test__spin",
+                  size: 16
+                })) : (openBlock(), createBlock(unref(Play), {
+                  key: 1,
+                  size: 16
+                })),
+                _cache[16] || (_cache[16] = createTextVNode(" 执行 researchFetchPage ", -1))
+              ], 8, _hoisted_18)
+            ])
+          ]),
+          createBaseVNode("section", _hoisted_19, [
+            createBaseVNode("div", { class: "research-test__row research-test__row--between" }, [
+              _cache[18] || (_cache[18] = createBaseVNode("h2", null, "日志", -1)),
+              createBaseVNode("button", {
+                type: "button",
+                class: "research-test__btn research-test__btn--ghost",
+                onClick: clearLogs
+              }, " 清空 ")
+            ]),
+            createBaseVNode("ul", _hoisted_20, [
+              (openBlock(true), createElementBlock(Fragment, null, renderList(logs.value, (line, i) => {
+                return openBlock(), createElementBlock("li", { key: i }, toDisplayString(line), 1);
+              }), 128)),
+              logs.value.length === 0 ? (openBlock(), createElementBlock("li", _hoisted_21, "尚无日志")) : createCommentVNode("", true)
+            ])
+          ])
+        ])
+      ]);
+    };
+  }
+});
+const _export_sfc = (sfc, props) => {
+  const target = sfc.__vccOpts || sfc;
+  for (const [key, val] of props) {
+    target[key] = val;
+  }
+  return target;
+};
+const ResearchTestPage = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-701d63a0"]]);
+const _hoisted_1 = {
+  key: 1,
+  class: "app-shell"
+};
 const _hoisted_2 = { class: "workspace-shell" };
 const _hoisted_3 = { class: "workspace-topbar" };
-const _hoisted_4 = { class: "topbar-actions" };
-const _hoisted_5 = {
+const _hoisted_4 = {
+  class: "breadcrumb",
+  "aria-label": "面包屑导航"
+};
+const _hoisted_5 = { key: 0 };
+const _hoisted_6 = { key: 1 };
+const _hoisted_7 = { class: "topbar-actions" };
+const _hoisted_8 = {
   class: "icon-button",
   type: "button",
   "aria-label": "搜索"
 };
-const _hoisted_6 = {
+const _hoisted_9 = {
   class: "new-button",
   type: "button"
 };
-const _hoisted_7 = {
+const _hoisted_10 = {
   class: "icon-button",
   type: "button",
   "aria-label": "通知"
 };
-const _hoisted_8 = {
+const _hoisted_11 = {
   class: "avatar-button",
   type: "button",
   "aria-label": "账户"
@@ -8068,41 +9872,95 @@ const _hoisted_8 = {
 const _sfc_main = /* @__PURE__ */ defineComponent({
   __name: "App",
   setup(__props) {
+    const workspace = useWorkspaceStore();
+    const isDev = false;
+    const researchTestMode = /* @__PURE__ */ ref(false);
+    function syncResearchTestFromHash() {
+      const h2 = window.location.hash.replace(/^#\/?/, "");
+      researchTestMode.value = h2 === "research-test";
+    }
+    function exitResearchTest() {
+      window.location.hash = "";
+      syncResearchTestFromHash();
+    }
+    function openResearchTest() {
+      window.location.hash = "#research-test";
+    }
+    onMounted(() => {
+      syncResearchTestFromHash();
+      window.addEventListener("hashchange", syncResearchTestFromHash);
+      void workspace.bootstrap();
+    });
+    onUnmounted(() => {
+      window.removeEventListener("hashchange", syncResearchTestFromHash);
+    });
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1, [
-        createVNode(_sfc_main$5),
+      return researchTestMode.value ? (openBlock(), createBlock(ResearchTestPage, {
+        key: 0,
+        onExit: exitResearchTest
+      })) : (openBlock(), createElementBlock("div", _hoisted_1, [
+        createVNode(_sfc_main$9),
         createBaseVNode("main", _hoisted_2, [
           createBaseVNode("header", _hoisted_3, [
-            _cache[1] || (_cache[1] = createBaseVNode("nav", {
-              class: "breadcrumb",
-              "aria-label": "Breadcrumb"
-            }, [
-              createBaseVNode("span", null, "Home"),
-              createBaseVNode("span", null, "AI & Machine Learning"),
-              createBaseVNode("span", null, "Large Language Models"),
-              createBaseVNode("strong", null, "RAG 研究与实践")
-            ], -1)),
-            createBaseVNode("div", _hoisted_4, [
-              createBaseVNode("button", _hoisted_5, [
-                createVNode(unref(Search), { size: 18 })
-              ]),
-              createBaseVNode("button", _hoisted_6, [
-                createVNode(unref(Plus), { size: 17 }),
-                _cache[0] || (_cache[0] = createTextVNode(" New ", -1))
-              ]),
-              createBaseVNode("button", _hoisted_7, [
-                createVNode(unref(Bell), { size: 18 })
+            createBaseVNode("nav", _hoisted_4, [
+              _cache[2] || (_cache[2] = createBaseVNode("span", { class: "breadcrumb-home" }, "首页", -1)),
+              (openBlock(true), createElementBlock(Fragment, null, renderList(unref(workspace).breadcrumbTrail, (crumb, index) => {
+                return openBlock(), createElementBlock("span", {
+                  key: crumb.id,
+                  class: normalizeClass(["breadcrumb-segment", {
+                    "breadcrumb-segment--collapse": unref(workspace).breadcrumbTrail.length > 1 && index < unref(workspace).breadcrumbTrail.length - 1
+                  }])
+                }, [
+                  _cache[1] || (_cache[1] = createBaseVNode("span", {
+                    class: "breadcrumb-sep",
+                    "aria-hidden": "true"
+                  }, "/", -1)),
+                  index === unref(workspace).breadcrumbTrail.length - 1 ? (openBlock(), createElementBlock("strong", _hoisted_5, toDisplayString(crumb.title), 1)) : (openBlock(), createElementBlock("span", _hoisted_6, toDisplayString(crumb.title), 1))
+                ], 2);
+              }), 128))
+            ]),
+            createBaseVNode("div", _hoisted_7, [
+              unref(isDev) ? (openBlock(), createElementBlock("button", {
+                key: 0,
+                class: "icon-button",
+                type: "button",
+                "aria-label": "打开 Research 测试页",
+                title: "Research 测试页（hash #research-test）",
+                onClick: openResearchTest
+              }, [
+                createVNode(unref(FlaskConical), { size: 18 })
+              ])) : createCommentVNode("", true),
+              createBaseVNode("button", {
+                class: "icon-button",
+                type: "button",
+                "aria-label": "模型与 API 配置",
+                title: "模型与 API 配置",
+                onClick: _cache[0] || (_cache[0] = ($event) => unref(workspace).setModelSettingsOpen(true))
+              }, [
+                createVNode(unref(Settings2), { size: 18 })
               ]),
               createBaseVNode("button", _hoisted_8, [
+                createVNode(unref(Search), { size: 18 })
+              ]),
+              createBaseVNode("button", _hoisted_9, [
+                createVNode(unref(Plus), { size: 17 }),
+                _cache[3] || (_cache[3] = createTextVNode(" New ", -1))
+              ]),
+              createBaseVNode("button", _hoisted_10, [
+                createVNode(unref(Bell), { size: 18 })
+              ]),
+              createBaseVNode("button", _hoisted_11, [
                 createVNode(unref(CircleUser), { size: 28 })
               ])
             ])
           ]),
+          createVNode(_sfc_main$5),
           createVNode(_sfc_main$2),
-          createVNode(_sfc_main$4),
-          createVNode(_sfc_main$1)
+          createVNode(_sfc_main$7),
+          createVNode(_sfc_main$8),
+          createVNode(_sfc_main$3)
         ])
-      ]);
+      ]));
     };
   }
 });

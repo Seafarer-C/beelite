@@ -55,10 +55,20 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   {
     id: "openrouter",
     label: "OpenRouter",
-    defaultModels: ["openrouter/auto"],
+    defaultBaseUrl: "https://openrouter.ai/api/v1",
+    defaultModels: ["openrouter/auto", "anthropic/claude-sonnet-4"],
     supportsLocal: false,
-    supportsCustomBaseUrl: false,
+    supportsCustomBaseUrl: true,
     notes: "用于快速试验多模型路由。"
+  },
+  {
+    id: "openai-compatible",
+    label: "OpenAI 兼容",
+    defaultBaseUrl: "",
+    defaultModels: ["gpt-4o-mini", "text-embedding-3-large"],
+    supportsLocal: false,
+    supportsCustomBaseUrl: true,
+    notes: "自建网关或其它兼容 OpenAI Chat Completions 的服务。"
   },
   {
     id: "ollama",

@@ -8,14 +8,19 @@
     "dev": "electron-vite dev",
     "dev:web": "vite src/renderer --host 127.0.0.1",
     "build": "vue-tsc -p tsconfig.json --noEmit && electron-vite build",
-    "typecheck": "vue-tsc -p tsconfig.json --noEmit"
+    "typecheck": "vue-tsc -p tsconfig.json --noEmit",
+    "playwright:install": "playwright install chromium"
   },
   "dependencies": {
     "@beelite/graph-engine": "workspace:*",
+    "@beelite/ingestion-engine": "workspace:*",
     "@beelite/llm-engine": "workspace:*",
+    "@beelite/research-engine": "workspace:*",
     "@beelite/shared": "workspace:*",
     "@beelite/space-engine": "workspace:*",
+    "@beelite/storage-engine": "workspace:*",
     "@beelite/whiteboard-engine": "workspace:*",
+    "@mixmark-io/domino": "^2.2.0",
     "@vueuse/core": "^14.1.0",
     "lucide-vue-next": "^1.0.0",
     "pinia": "^3.0.4",

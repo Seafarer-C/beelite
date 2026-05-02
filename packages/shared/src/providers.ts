@@ -40,3 +40,24 @@ export interface LlmRuntimeConfig {
   maxOutputTokens?: number;
   reasoningEnabled?: boolean;
 }
+
+/** Renderer-safe view of saved credentials (never includes raw apiKey) */
+export interface LlmProviderCredentialState {
+  providerId: ProviderKind;
+  hasApiKey: boolean;
+  baseUrl?: string;
+  model?: string;
+}
+
+export interface LlmSettingsPublic {
+  providers: LlmProviderCredentialState[];
+  routes: ModelRoute[];
+}
+
+/** IPC: null on a field clears it where supported; undefined = leave unchanged */
+export interface LlmSetProviderPayload {
+  providerId: ProviderKind;
+  apiKey?: string | null;
+  baseUrl?: string | null;
+  model?: string | null;
+}

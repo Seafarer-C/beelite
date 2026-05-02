@@ -8,7 +8,8 @@
     "dev": "pnpm --filter @beelite/desktop dev",
     "dev:web": "pnpm --filter @beelite/desktop dev:web",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "playwright:install": "pnpm --filter @beelite/research-engine exec playwright install chromium"
   },
   "pnpm": {
     "overrides": {
@@ -17,6 +18,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
+    "playwright": "^1.52.0",
     "typescript": "^5.9.3"
   }
 }

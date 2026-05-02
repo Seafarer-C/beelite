@@ -21,6 +21,8 @@ export type SourceType =
   | "research_source"
   | "manual";
 
+export type ImportKind = "chatgpt" | "browser_bookmarks";
+
 export type ProposalStatus = "draft" | "accepted" | "rejected";
 
 export interface EvidenceRef {
@@ -69,6 +71,39 @@ export interface KnowledgeSource {
   url?: string;
   importedAt: string;
   metadata: Record<string, unknown>;
+}
+
+export interface ImportJob {
+  id: string;
+  kind: ImportKind;
+  status: "running" | "completed" | "failed";
+  filePath?: string;
+  sourceCount: number;
+  nodeCount: number;
+  edgeCount: number;
+  error?: string;
+  startedAt: string;
+  finishedAt?: string;
+}
+
+export interface ImportStats {
+  sources: number;
+  nodes: number;
+  edges: number;
+  spaces: number;
+  blocks: number;
+  proposals: number;
+  importJobs: number;
+}
+
+export interface ImportRunResult {
+  job: ImportJob;
+  stats: ImportStats;
+  preview: {
+    sources: KnowledgeSource[];
+    nodes: KnowledgeNode[];
+    edges: KnowledgeEdge[];
+  };
 }
 
 export interface KnowledgeBlock {
@@ -143,4 +178,13 @@ export interface ResearchClaim {
   confidence: number;
   evidenceRefs: EvidenceRef[];
   counterArguments: string[];
+}
+
+/** Main-process workspace bundle for renderer sync */
+export interface WorkspaceSnapshot {
+  spaces: KnowledgeSpace[];
+  blocks: KnowledgeBlock[];
+  nodes: KnowledgeNode[];
+  edges: KnowledgeEdge[];
+  proposal: GraphProposal | null;
 }

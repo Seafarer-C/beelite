@@ -18,7 +18,7 @@ const dragState = reactive({
 });
 
 const visibleBlocks = computed(() =>
-  store.blocks.filter((block) =>
+  store.blocks.filter((block: KnowledgeBlock) =>
     isBlockVisible(block, store.viewport, {
       width: width.value || 1200,
       height: height.value || 800

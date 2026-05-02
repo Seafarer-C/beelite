@@ -1,11 +1,23 @@
 <script setup lang="ts">
-import { BrainCircuit, CheckCircle2, Database, GitPullRequestDraft, Sparkles } from "lucide-vue-next";
+import {
+  BrainCircuit,
+  CheckCircle2,
+  Database,
+  GitPullRequestDraft,
+  Settings2,
+  Sparkles
+} from "lucide-vue-next";
 import { computed } from "vue";
+import type { LlmProviderCredentialState } from "@beelite/shared";
+import ModelSettingsModal from "./ModelSettingsModal.vue";
 import { useWorkspaceStore } from "../stores/workspace";
 
 const store = useWorkspaceStore();
 
 const providerCount = computed(() => store.providerTemplates.length);
+const configuredCount = computed(
+  () => store.llmSettings?.providers.filter((p: LlmProviderCredentialState) => p.hasApiKey).length ?? 0
+);
 const proposalNodeCount = computed(() => store.graphProposal.nodes.length);
 const proposalEdgeCount = computed(() => store.graphProposal.edges.length);
 </script>
@@ -24,12 +36,23 @@ const proposalEdgeCount = computed(() => store.graphProposal.edges.length);
   </aside>
 
   <section class="runtime-panel" aria-label="运行时状态">
-    <header>
-      <BrainCircuit :size="18" />
-      <div>
-        <strong>pi-mono Runtime</strong>
-        <span>{{ providerCount }} providers ready</span>
+    <header class="runtime-panel-header">
+      <div class="runtime-panel-heading">
+        <BrainCircuit :size="18" />
+        <div>
+          <strong>模型路由</strong>
+          <span>{{ configuredCount }} / {{ providerCount }} 提供商已配置密钥</span>
+        </div>
       </div>
+      <button
+        type="button"
+        class="runtime-panel-settings"
+        aria-label="模型与 API 配置"
+        title="模型与 API 配置"
+        @click="store.setModelSettingsOpen(true)"
+      >
+        <Settings2 :size="17" />
+      </button>
     </header>
 
     <div class="route-list">
@@ -44,4 +67,9 @@ const proposalEdgeCount = computed(() => store.graphProposal.edges.length);
       <span>{{ proposalNodeCount }} nodes · {{ proposalEdgeCount }} edges · draft</span>
     </div>
   </section>
+
+  <ModelSettingsModal
+    :open="store.modelSettingsOpen"
+    @update:open="store.setModelSettingsOpen"
+  />
 </template>
