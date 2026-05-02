@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "types": ["node", "electron"],
+    "paths": {
+      "@/*": ["src/renderer/src/*"]
+    }
+  },
+  "references": [
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/graph-engine" },
+    { "path": "../../packages/llm-engine" },
+    { "path": "../../packages/space-engine" },
+    { "path": "../../packages/whiteboard-engine" }
+  ],
+  "include": [
+    "electron.vite.config.ts",
+    "src/main/**/*.ts",
+    "src/preload/**/*.ts",
+    "src/renderer/src/**/*.ts",
+    "src/renderer/src/**/*.vue"
+  ]
+}
