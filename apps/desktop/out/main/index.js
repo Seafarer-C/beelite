@@ -45450,7 +45450,7 @@ function formatBrowserDebug(label, query, navUrl, finalUrl, httpStatus, outcome)
 async function runBrowserSearch(query, count) {
   const q = query.trim();
   if (!q) {
-    return { hits: [], debugText: "empty query" };
+    return { hits: [], debugText: "empty query", searchLevel: void 0, routeTrace: [] };
   }
   const max = clampInt(count, 1, 20);
   const ddgNavUrl = `${DDG_LITE_URL}?q=${encodeURIComponent(q)}`;
@@ -45461,7 +45461,12 @@ async function runBrowserSearch(query, count) {
   debugChunks.push(staticTry.debugLines.join("\n"));
   if (staticTry.hits.length > 0) {
     console.info(`${LOG_PREFIX} static SERP ok hits=${staticTry.hits.length}`);
-    return { hits: staticTry.hits, debugText: debugChunks.join("\n\n") };
+    return {
+      hits: staticTry.hits,
+      debugText: debugChunks.join("\n\n"),
+      searchLevel: "L1",
+      routeTrace: ["L1:fetch+cheerio (Bing/zh → Bing/en → Google → DDG HTML)"]
+    };
   }
   return withBrowserLock(async () => {
     const browser = await getSharedBrowser();
@@ -45470,8 +45475,16 @@ async function runBrowserSearch(query, count) {
       userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     });
     const page = await context.newPage();
+    const routeTrace = [
+      "L1:static-pipeline:0-hits",
+      "L2:playwright(Chromium)"
+    ];
     try {
+      debugChunks.push(
+        "[Orchestrator] L1（协议级 fetch）无可用结果 → 升级 L2（Playwright 真浏览器）"
+      );
       console.info(`${LOG_PREFIX} Bing zh goto`, bingNavUrl);
+      routeTrace.push("L2:bing-zh");
       const bingResp = await page.goto(bingNavUrl, { waitUntil: "domcontentloaded", timeout: 45e3 });
       let bingStatus = bingResp?.status();
       let finalUrl = page.url();
@@ -45490,6 +45503,7 @@ async function runBrowserSearch(query, count) {
       debugChunks.push(`bingZhAntiBotWall=${bingAntiBot}`);
       debugChunks.push(`bingZhHttpBad=${bingHttpBad}`);
       if (hits.length === 0 && !bingAntiBot && !bingHttpBad) {
+        routeTrace.push("L2:bing-en");
         console.info(`${LOG_PREFIX} Bing zh empty, try Bing en`, bingNavUrlEn);
         const bingEnResp = await page.goto(bingNavUrlEn, { waitUntil: "domcontentloaded", timeout: 45e3 });
         bingStatus = bingEnResp?.status();
@@ -45542,6 +45556,7 @@ async function runBrowserSearch(query, count) {
           if (htmlOutcome.hits.length > 0) {
             hits = htmlOutcome.hits.slice(0, max);
             ddgHtmlWorked = true;
+            routeTrace.push(`L2:ddg-html:${ep.name}`);
             debugChunks.push(`fallbackUsed=true source=pw-${ep.name}`);
             break;
           }
@@ -45567,17 +45582,30 @@ async function runBrowserSearch(query, count) {
           debugChunks.push(`ddgLiteHttpBad=${ddgHttpBad}`);
           if (ddgOutcome.hits.length > 0) {
             hits = ddgOutcome.hits.slice(0, max);
+            routeTrace.push("L2:ddg-lite");
             debugChunks.push("fallbackUsed=true source=ddg-lite-cheerio");
           } else if (bingAntiBot && ddgAntiBot) {
             const reason = "Bing 与 DuckDuckGo 均触发了人机验证或拦截，无头浏览器无法自动通过。请改用 Research 面板中的 Brave / Tavily / Serper（API Key）搜索，或在系统浏览器中手动搜索。";
             debugChunks.push(`blocked=${reason}`);
             console.error(`${LOG_PREFIX}`, reason);
-            return { hits: [], debugText: debugChunks.join("\n\n"), blockedReason: reason };
+            return {
+              hits: [],
+              debugText: debugChunks.join("\n\n"),
+              blockedReason: reason,
+              searchLevel: "L2",
+              routeTrace
+            };
           } else {
             const reason = "已依次尝试：静态 fetch（Bing/Google/DDG）、Playwright Bing（中/英）、DDG HTML、DDG Lite（cheerio 解析），仍无可用结果。建议使用 API 搜索提供商，或在系统浏览器中搜索。";
             debugChunks.push(`blocked=${reason}`);
             console.error(`${LOG_PREFIX}`, reason);
-            return { hits: [], debugText: debugChunks.join("\n\n"), blockedReason: reason };
+            return {
+              hits: [],
+              debugText: debugChunks.join("\n\n"),
+              blockedReason: reason,
+              searchLevel: "L2",
+              routeTrace
+            };
           }
         }
       }
@@ -45585,7 +45613,7 @@ async function runBrowserSearch(query, count) {
       console.info(`${LOG_PREFIX} done hits=${hits.length}`);
       console.info(`${LOG_PREFIX} diagnostics:
 ${debugText}`);
-      return { hits, debugText };
+      return { hits, debugText, searchLevel: "L2", routeTrace };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error(`${LOG_PREFIX} error`, msg);
@@ -46396,7 +46424,10 @@ class ResearchSettingsStore {
     const { provider, apiKey } = await this.snapshot();
     if (provider === "browser") {
       try {
-        const { hits, debugText, blockedReason } = await runBrowserSearch(query, count);
+        const { hits, debugText, blockedReason, searchLevel, routeTrace } = await runBrowserSearch(
+          query,
+          count
+        );
         if (blockedReason) {
           return {
             ok: false,
@@ -46404,10 +46435,20 @@ class ResearchSettingsStore {
             provider,
             results: [],
             error: blockedReason,
-            browserDebug: debugText
+            browserDebug: debugText,
+            searchLevel,
+            routeTrace
           };
         }
-        return { ok: true, query, provider, results: hits, browserDebug: debugText };
+        return {
+          ok: true,
+          query,
+          provider,
+          results: hits,
+          browserDebug: debugText,
+          searchLevel,
+          routeTrace
+        };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return {

@@ -16,7 +16,20 @@ export {
   fetchPageMarkdownStatic,
   fetchPageMarkdownViaPlaywright,
   fetchPageMarkdownAuto,
-  type FetchMarkdownResult
+  fetchPageMarkdownPipelineForLlm,
+  type FetchMarkdownResult,
+  type FetchPageMarkdownPipelineResult
 } from "./fetch-markdown";
 export { excerptAroundKeywords } from "./crawler/excerpt";
 export { pickRandomUserAgent, USER_AGENT_POOL } from "./crawler/http";
+export type { ResearchSearchLevel } from "./crawler/search-levels";
+export {
+  chunkMarkdownByParagraphs,
+  scoreTextForKeywords,
+  filterChunksByKeywordScore
+} from "./crawler/markdown-chunks";
+export {
+  buildLlmReadyChunks,
+  type LlmContentChunk,
+  type BuildLlmChunksOptions
+} from "./crawler/llm-pipeline";

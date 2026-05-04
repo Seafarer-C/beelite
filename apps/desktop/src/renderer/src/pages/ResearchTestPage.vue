@@ -82,6 +82,9 @@ async function runSearch(): Promise<void> {
     const result = await store.researchSearch({ query: q, count: countDraft.value });
     const ms = Math.round(performance.now() - started);
     log(`搜索完成 ${ms}ms ok=${result.ok} hits=${result.results?.length ?? 0}`);
+    if (result.searchLevel) {
+      log(`searchLevel=${result.searchLevel} route=${(result.routeTrace ?? []).join(" → ")}`);
+    }
     if (!result.ok) {
       log(`搜索失败: ${result.error ?? "unknown"}`);
     } else {

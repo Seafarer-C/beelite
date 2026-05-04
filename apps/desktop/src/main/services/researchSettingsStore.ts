@@ -132,7 +132,10 @@ export class ResearchSettingsStore {
 
     if (provider === "browser") {
       try {
-        const { hits, debugText, blockedReason } = await runBrowserSearch(query, count);
+        const { hits, debugText, blockedReason, searchLevel, routeTrace } = await runBrowserSearch(
+          query,
+          count
+        );
         if (blockedReason) {
           return {
             ok: false,
@@ -140,10 +143,20 @@ export class ResearchSettingsStore {
             provider,
             results: [],
             error: blockedReason,
-            browserDebug: debugText
+            browserDebug: debugText,
+            searchLevel,
+            routeTrace
           };
         }
-        return { ok: true, query, provider, results: hits, browserDebug: debugText };
+        return {
+          ok: true,
+          query,
+          provider,
+          results: hits,
+          browserDebug: debugText,
+          searchLevel,
+          routeTrace
+        };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return {

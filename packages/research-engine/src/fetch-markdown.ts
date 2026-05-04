@@ -4,6 +4,11 @@ import { pageHtmlToMarkdown } from "./crawler/html-to-markdown";
 import { excerptAroundKeywords } from "./crawler/excerpt";
 import { fetchHtml } from "./crawler/fetch-html";
 import { getSharedBrowser, withBrowserLock } from "./browser-pool";
+import {
+  buildLlmReadyChunks,
+  type BuildLlmChunksOptions,
+  type LlmContentChunk
+} from "./crawler/llm-pipeline";
 
 const DEFAULT_MAX_MD = 12_000;
 
@@ -126,4 +131,30 @@ export async function fetchPageMarkdownAuto(
     staticEmpty: !st.ok,
     source: "playwright"
   };
+}
+
+export interface FetchPageMarkdownPipelineResult extends FetchMarkdownResult {
+  chunks: LlmContentChunk[];
+}
+
+/**
+ * 抓取 → Markdown → 按段落切片并带来源（便于 LLM / 向量层；见 docs/anti-bot.md）。
+ */
+export async function fetchPageMarkdownPipelineForLlm(
+  targetUrl: string,
+  options?: {
+    maxChars?: number;
+    excerptKeywords?: string[];
+    minStaticChars?: number;
+    chunk?: BuildLlmChunksOptions;
+  }
+): Promise<FetchPageMarkdownPipelineResult> {
+  const base = await fetchPageMarkdownAuto(targetUrl, options);
+  const chunks = buildLlmReadyChunks(
+    base.markdown,
+    targetUrl,
+    base.title,
+    options?.chunk
+  );
+  return { ...base, chunks };
 }

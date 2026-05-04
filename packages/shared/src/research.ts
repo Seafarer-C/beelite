@@ -34,6 +34,10 @@ export interface ResearchSearchResult {
   error?: string;
   /** provider 为 browser 时：页面诊断与解析摘要（多行文本） */
   browserDebug?: string;
+  /** browser 模式：L1=仅协议级 fetch；L2=已使用 Playwright */
+  searchLevel?: "L1" | "L2";
+  /** browser 模式：多级降级路径摘要 */
+  routeTrace?: string[];
 }
 
 export interface ResearchFetchPageParams {
