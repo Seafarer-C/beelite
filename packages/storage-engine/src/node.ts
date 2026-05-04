@@ -16,6 +16,8 @@ import {
   createImportJobRecord,
   parseJson,
   serializeJson,
+  type BrowserBookmarkChangeLogRow,
+  type BrowserBookmarkSnapshotRow,
   type KnowledgeRepository,
   type LlmProviderPersistRow,
   type ResearchSearchPersistRow,
@@ -465,6 +467,98 @@ export class NodeSqliteKnowledgeRepository implements KnowledgeRepository {
     };
   }
 
+  getBrowserBookmarkSnapshot(browserKey: string): BrowserBookmarkSnapshotRow | null {
+    const row = this.db
+      .prepare(
+        `SELECT id, browser_type, collections_json, content_hash, updated_at
+         FROM browser_bookmark_snapshots WHERE id = ?`
+      )
+      .get(browserKey) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      browserType: String(row.browser_type),
+      collections: parseJson(row.collections_json, null),
+      contentHash: String(row.content_hash),
+      updatedAt: String(row.updated_at)
+    };
+  }
+
+  upsertBrowserBookmarkSnapshot(row: BrowserBookmarkSnapshotRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO browser_bookmark_snapshots (id, browser_type, collections_json, content_hash, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           browser_type = excluded.browser_type,
+           collections_json = excluded.collections_json,
+           content_hash = excluded.content_hash,
+           updated_at = excluded.updated_at`
+      )
+      .run(
+        row.id,
+        row.browserType,
+        serializeJson(row.collections),
+        row.contentHash,
+        row.updatedAt
+      );
+  }
+
+  listBrowserBookmarkSnapshots(): BrowserBookmarkSnapshotRow[] {
+    return this.db
+      .prepare(
+        `SELECT id, browser_type, collections_json, content_hash, updated_at
+         FROM browser_bookmark_snapshots
+         ORDER BY updated_at DESC`
+      )
+      .all()
+      .map((row) => bookmarkSnapshotFromRow(row as Record<string, unknown>));
+  }
+
+  appendBrowserBookmarkChangeLog(
+    row: Omit<BrowserBookmarkChangeLogRow, "id">
+  ): BrowserBookmarkChangeLogRow {
+    this.db
+      .prepare(
+        `INSERT INTO browser_bookmark_change_log (browser_type, occurred_at, previous_hash, new_hash, delta_json, summary)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        row.browserType,
+        row.occurredAt,
+        row.previousHash ?? null,
+        row.newHash,
+        row.deltaJson !== undefined && row.deltaJson !== null ? serializeJson(row.deltaJson) : null,
+        row.summary ?? null
+      );
+
+    const idRow = this.db.prepare(`SELECT last_insert_rowid() AS id`).get() as { id?: unknown };
+    const id = Number(idRow?.id ?? 0);
+
+    return {
+      id,
+      browserType: row.browserType,
+      occurredAt: row.occurredAt,
+      previousHash: row.previousHash,
+      newHash: row.newHash,
+      deltaJson: row.deltaJson ?? null,
+      summary: row.summary ?? null
+    };
+  }
+
+  listBrowserBookmarkChangeLogs(limit = 500): BrowserBookmarkChangeLogRow[] {
+    const lim = Math.min(Math.max(limit, 1), 2000);
+    return this.db
+      .prepare(
+        `SELECT id, browser_type, occurred_at, previous_hash, new_hash, delta_json, summary
+         FROM browser_bookmark_change_log
+         ORDER BY id DESC
+         LIMIT ?`
+      )
+      .all(lim)
+      .map((row) => bookmarkChangeLogFromRow(row as Record<string, unknown>));
+  }
+
   saveResearchSearchSettings(patch: { provider?: string | null; apiKey?: string | null }): void {
     const cur = this.getResearchSearchSettings();
     let provider = cur?.provider ?? "brave";
@@ -517,6 +611,33 @@ export class NodeSqliteKnowledgeRepository implements KnowledgeRepository {
     const row = this.db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as CountRow | undefined;
     return Number(row?.count ?? 0);
   }
+}
+
+function bookmarkSnapshotFromRow(row: Record<string, unknown>): BrowserBookmarkSnapshotRow {
+  return {
+    id: String(row.id),
+    browserType: String(row.browser_type),
+    collections: parseJson(row.collections_json, null),
+    contentHash: String(row.content_hash),
+    updatedAt: String(row.updated_at)
+  };
+}
+
+function bookmarkChangeLogFromRow(row: Record<string, unknown>): BrowserBookmarkChangeLogRow {
+  const deltaRaw = row.delta_json;
+  let deltaJson: unknown | null = null;
+  if (typeof deltaRaw === "string" && deltaRaw.length > 0) {
+    deltaJson = parseJson(deltaRaw, null);
+  }
+  return {
+    id: Number(row.id ?? 0),
+    browserType: String(row.browser_type),
+    occurredAt: String(row.occurred_at),
+    previousHash: row.previous_hash == null ? null : String(row.previous_hash),
+    newHash: String(row.new_hash),
+    deltaJson,
+    summary: row.summary == null ? null : String(row.summary)
+  };
 }
 
 function importJobFromRow(row: Record<string, unknown>): ImportJob {

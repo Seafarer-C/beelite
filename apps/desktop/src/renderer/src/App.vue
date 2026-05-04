@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { Bell, FlaskConical, Plus, Search, Settings2, UserCircle } from "lucide-vue-next";
+import { Bell, Bookmark, FlaskConical, Plus, Search, Settings2, UserCircle } from "lucide-vue-next";
 import { onMounted, onUnmounted, ref } from "vue";
 import AppSidebar from "./components/AppSidebar.vue";
 import CanvasToolbar from "./components/CanvasToolbar.vue";
-import ImportPanel from "./components/ImportPanel.vue";
 import KnowledgeCanvas from "./components/KnowledgeCanvas.vue";
-import ProviderDock from "./components/ProviderDock.vue";
-import ResearchPanel from "./components/ResearchPanel.vue";
+// import ResearchPanel from "./components/ResearchPanel.vue";
+import BookmarksTestPage from "./pages/BookmarksTestPage.vue";
 import ResearchTestPage from "./pages/ResearchTestPage.vue";
 import { useWorkspaceStore } from "./stores/workspace";
 
@@ -16,34 +15,41 @@ const workspace = useWorkspaceStore();
 const isDev = import.meta.env.DEV;
 
 const researchTestMode = ref(false);
+const bookmarksTestMode = ref(false);
 
-function syncResearchTestFromHash(): void {
+function syncDevTestPageFromHash(): void {
   const h = window.location.hash.replace(/^#\/?/, "");
   researchTestMode.value = h === "research-test";
+  bookmarksTestMode.value = h === "bookmarks-test";
 }
 
-function exitResearchTest(): void {
+function exitDevTestPage(): void {
   window.location.hash = "";
-  syncResearchTestFromHash();
+  syncDevTestPageFromHash();
 }
 
 function openResearchTest(): void {
   window.location.hash = "#research-test";
 }
 
+function openBookmarksTest(): void {
+  window.location.hash = "#bookmarks-test";
+}
+
 onMounted(() => {
-  syncResearchTestFromHash();
-  window.addEventListener("hashchange", syncResearchTestFromHash);
+  syncDevTestPageFromHash();
+  window.addEventListener("hashchange", syncDevTestPageFromHash);
   void workspace.bootstrap();
 });
 
 onUnmounted(() => {
-  window.removeEventListener("hashchange", syncResearchTestFromHash);
+  window.removeEventListener("hashchange", syncDevTestPageFromHash);
 });
 </script>
 
 <template>
-  <ResearchTestPage v-if="researchTestMode" @exit="exitResearchTest" />
+  <ResearchTestPage v-if="researchTestMode" @exit="exitDevTestPage" />
+  <BookmarksTestPage v-else-if="bookmarksTestMode" @exit="exitDevTestPage" />
   <div v-else class="app-shell">
     <AppSidebar />
 
@@ -79,6 +85,16 @@ onUnmounted(() => {
             <FlaskConical :size="18" />
           </button>
           <button
+            v-if="isDev"
+            class="icon-button"
+            type="button"
+            aria-label="打开浏览器收藏夹拉取测试页"
+            title="浏览器收藏夹本地拉取测试（hash #bookmarks-test）"
+            @click="openBookmarksTest"
+          >
+            <Bookmark :size="18" />
+          </button>
+          <button
             class="icon-button"
             type="button"
             aria-label="模型与 API 配置"
@@ -104,10 +120,10 @@ onUnmounted(() => {
       </header>
 
       <KnowledgeCanvas />
-      <ResearchPanel />
-      <ImportPanel />
+      <!-- <ResearchPanel /> -->
+      <!-- <ImportPanel /> -->
       <CanvasToolbar />
-      <ProviderDock />
+      <!-- <ProviderDock /> -->
     </main>
   </div>
 </template>

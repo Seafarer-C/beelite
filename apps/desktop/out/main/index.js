@@ -2,7 +2,10 @@ import { dialog, app, ipcMain, BrowserWindow, shell } from "electron";
 import { existsSync } from "node:fs";
 import require$$1$7, { join as join$1, dirname } from "node:path";
 import require$$1$4, { fileURLToPath } from "node:url";
-import require$$0$7, { mkdir, readFile, unlink } from "node:fs/promises";
+import require$$0$7, { readdir, readFile, mkdir, unlink } from "node:fs/promises";
+import { homedir } from "node:os";
+import require$$2$3, { createHash } from "node:crypto";
+import { create } from "jsondiffpatch";
 import { chromium } from "playwright";
 import Stream from "node:stream";
 import require$$0$1 from "buffer";
@@ -19,7 +22,6 @@ import require$$0$6 from "node:buffer";
 import zlib from "node:zlib";
 import require$$5$2 from "node:perf_hooks";
 import require$$8 from "node:util/types";
-import require$$2$3 from "node:crypto";
 import require$$1$3 from "node:sqlite";
 import require$$2$2 from "node:worker_threads";
 import require$$1$5 from "node:async_hooks";
@@ -423,6 +425,353 @@ function safeDomain(url) {
     return void 0;
   }
 }
+function normalizeChromeBookmarksFile(raw, profileName, bookmarksFilePath) {
+  const file = raw;
+  const rootsIn = file.roots ?? {};
+  const rootKeys = Object.keys(rootsIn).sort();
+  const roots = {};
+  for (const key of rootKeys) {
+    roots[key] = normalizeTreeNode(rootsIn[key]);
+  }
+  return {
+    schemaVersion: 1,
+    profileName,
+    bookmarksFilePath,
+    roots
+  };
+}
+function normalizeTreeNode(node) {
+  if (!node) return null;
+  const chromeId = typeof node.id === "string" ? node.id : "";
+  const title = typeof node.name === "string" ? node.name : "";
+  if (node.type === "url" && typeof node.url === "string" && node.url.length > 0) {
+    return {
+      kind: "url",
+      chromeId,
+      title,
+      url: node.url,
+      dateAdded: chromeTimeToIso(node.date_added)
+    };
+  }
+  const rawChildren = node.children ?? [];
+  const normalizedChildren = rawChildren.map((c) => normalizeTreeNode(c)).filter((c) => c !== null);
+  const sorted = sortChildNodes(normalizedChildren);
+  return {
+    kind: "folder",
+    chromeId,
+    title,
+    dateAdded: chromeTimeToIso(node.date_added),
+    children: sorted.length > 0 ? sorted : void 0
+  };
+}
+function sortChildNodes(nodes) {
+  return [...nodes].sort((a, b) => compareNodes(a, b));
+}
+function compareNodes(a, b) {
+  const kindOrder = a.kind.localeCompare(b.kind);
+  if (kindOrder !== 0) return kindOrder;
+  const titleCmp = a.title.localeCompare(b.title, "en");
+  if (titleCmp !== 0) return titleCmp;
+  const au = a.url ?? "";
+  const bu = b.url ?? "";
+  return au.localeCompare(bu, "en");
+}
+const CHROMIUM_BROWSERS = [
+  {
+    key: "chrome",
+    label: "Google Chrome",
+    paths: {
+      darwin: "Library/Application Support/Google/Chrome",
+      win32: "Google/Chrome/User Data",
+      linux: ".config/google-chrome"
+    }
+  },
+  {
+    key: "chrome_canary",
+    label: "Google Chrome Canary",
+    paths: {
+      darwin: "Library/Application Support/Google/Chrome Canary",
+      win32: "Google/Chrome SxS/User Data",
+      linux: ".config/google-chrome-canary"
+    }
+  },
+  {
+    key: "chromium",
+    label: "Chromium",
+    paths: {
+      darwin: "Library/Application Support/Chromium",
+      win32: "Chromium/User Data",
+      linux: ".config/chromium"
+    }
+  },
+  {
+    key: "edge",
+    label: "Microsoft Edge",
+    paths: {
+      darwin: "Library/Application Support/Microsoft Edge",
+      win32: "Microsoft/Edge/User Data",
+      linux: ".config/microsoft-edge"
+    }
+  },
+  {
+    key: "brave",
+    label: "Brave",
+    paths: {
+      darwin: "Library/Application Support/BraveSoftware/Brave-Browser",
+      win32: "BraveSoftware/Brave-Browser/User Data",
+      linux: ".config/BraveSoftware/Brave-Browser"
+    }
+  },
+  {
+    key: "vivaldi",
+    label: "Vivaldi",
+    paths: {
+      darwin: "Library/Application Support/Vivaldi",
+      win32: "Vivaldi/User Data",
+      linux: ".config/vivaldi"
+    }
+  },
+  {
+    key: "arc",
+    label: "Arc",
+    paths: {
+      darwin: "Library/Application Support/Arc/User Data",
+      win32: "",
+      linux: ""
+    }
+  },
+  {
+    key: "opera",
+    label: "Opera",
+    paths: {
+      darwin: "Library/Application Support/com.operasoftware.Opera",
+      // Windows 下 Opera 书签通常在 Roaming
+      win32: "__APPDATA__/Opera Software/Opera Stable",
+      linux: ".config/opera"
+    }
+  }
+];
+function resolveUserDataRoot(spec) {
+  const home = homedir();
+  if (process.platform === "win32") {
+    if (!spec.win32) return null;
+    if (spec.win32.startsWith("__APPDATA__/")) {
+      const appData = process.env.APPDATA;
+      if (!appData) return null;
+      return join$1(appData, spec.win32.slice("__APPDATA__/".length));
+    }
+    const local = process.env.LOCALAPPDATA;
+    if (!local) return null;
+    return join$1(local, spec.win32);
+  }
+  if (process.platform === "darwin") {
+    return join$1(home, spec.darwin);
+  }
+  if (!spec.linux) return null;
+  return join$1(home, spec.linux);
+}
+async function parseBookmarksAtPath(bookmarksFilePath) {
+  const raw = JSON.parse(await readFile(bookmarksFilePath, "utf8"));
+  const parsed = parseBrowserBookmarks(raw);
+  const sampleBookmarks = parsed.bookmarks.slice(0, 16).map((b) => ({
+    title: b.title,
+    url: b.url
+  }));
+  return {
+    folderCount: parsed.folders.length,
+    urlBookmarkCount: parsed.bookmarks.length,
+    sampleBookmarks
+  };
+}
+async function previewLocalBookmarksFile(bookmarksFilePath) {
+  if (!existsSync(bookmarksFilePath)) {
+    return {
+      ok: false,
+      bookmarksFilePath,
+      folderCount: 0,
+      urlBookmarkCount: 0,
+      sampleBookmarks: [],
+      error: "文件不存在"
+    };
+  }
+  try {
+    const parsed = await parseBookmarksAtPath(bookmarksFilePath);
+    return {
+      ok: true,
+      bookmarksFilePath,
+      ...parsed
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      bookmarksFilePath,
+      folderCount: 0,
+      urlBookmarkCount: 0,
+      sampleBookmarks: [],
+      error: e instanceof Error ? e.message : String(e)
+    };
+  }
+}
+async function loadAllChromiumRawBookmarkFiles() {
+  const out = [];
+  for (const browser of CHROMIUM_BROWSERS) {
+    const userDataDir = resolveUserDataRoot(browser.paths);
+    if (!userDataDir || !existsSync(userDataDir)) continue;
+    let entries;
+    try {
+      entries = await readdir(userDataDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      if (!ent.isDirectory()) continue;
+      const profileName = ent.name;
+      if (profileName === "SingletonSocket" || profileName === "segmentation_platform") continue;
+      const bookmarksFilePath = join$1(userDataDir, profileName, "Bookmarks");
+      if (!existsSync(bookmarksFilePath)) continue;
+      try {
+        const raw = JSON.parse(await readFile(bookmarksFilePath, "utf8"));
+        out.push({
+          browserKey: browser.key,
+          browserLabel: browser.label,
+          profileName,
+          bookmarksFilePath,
+          raw
+        });
+      } catch {
+      }
+    }
+  }
+  out.sort((a, b) => {
+    const c = a.browserLabel.localeCompare(b.browserLabel, "zh-Hans");
+    if (c !== 0) return c;
+    return a.profileName.localeCompare(b.profileName, "zh-Hans");
+  });
+  return out;
+}
+async function scanLocalChromiumBookmarkProfiles() {
+  const out = [];
+  for (const browser of CHROMIUM_BROWSERS) {
+    const userDataDir = resolveUserDataRoot(browser.paths);
+    if (!userDataDir || !existsSync(userDataDir)) continue;
+    let entries;
+    try {
+      entries = await readdir(userDataDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      if (!ent.isDirectory()) continue;
+      const profileName = ent.name;
+      if (profileName === "SingletonSocket" || profileName === "segmentation_platform") continue;
+      const profileDir = join$1(userDataDir, profileName);
+      const bookmarksFilePath = join$1(profileDir, "Bookmarks");
+      if (!existsSync(bookmarksFilePath)) continue;
+      const row = {
+        browserKey: browser.key,
+        browserLabel: browser.label,
+        userDataDir,
+        profileName,
+        profileDir,
+        bookmarksFilePath,
+        fileExists: true
+      };
+      try {
+        const parsed = await parseBookmarksAtPath(bookmarksFilePath);
+        row.folderCount = parsed.folderCount;
+        row.urlBookmarkCount = parsed.urlBookmarkCount;
+        row.sampleBookmarks = parsed.sampleBookmarks.slice(0, 8);
+      } catch (e) {
+        row.error = e instanceof Error ? e.message : String(e);
+      }
+      out.push(row);
+    }
+  }
+  out.sort((a, b) => {
+    const c = a.browserLabel.localeCompare(b.browserLabel, "zh-Hans");
+    if (c !== 0) return c;
+    return a.profileName.localeCompare(b.profileName, "zh-Hans");
+  });
+  return out;
+}
+const BOOKMARK_BACKGROUND_DELAY_MS = 2e3;
+const diffpatcher = create({
+  arrays: { detectMove: true, includeValueOnMove: false },
+  objectHash: (obj) => {
+    const rec = obj;
+    if (typeof rec.chromeId === "string" && rec.chromeId.length > 0) return rec.chromeId;
+    if (typeof rec.profileName === "string") return rec.profileName;
+    if (typeof rec.bookmarksFilePath === "string") return rec.bookmarksFilePath;
+    return JSON.stringify(obj).slice(0, 120);
+  }
+});
+function stableSortDeep(value) {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(stableSortDeep);
+  const obj = value;
+  const keys = Object.keys(obj).sort();
+  const out = {};
+  for (const k of keys) {
+    out[k] = stableSortDeep(obj[k]);
+  }
+  return out;
+}
+function hashBookmarkCollections(collections) {
+  const sorted = stableSortDeep(collections);
+  return createHash("sha256").update(JSON.stringify(sorted)).digest("hex");
+}
+async function syncBrowserBookmarksToRepository(repo) {
+  const rawFiles = await loadAllChromiumRawBookmarkFiles();
+  const byBrowser = /* @__PURE__ */ new Map();
+  for (const row of rawFiles) {
+    const norm = normalizeChromeBookmarksFile(row.raw, row.profileName, row.bookmarksFilePath);
+    let g = byBrowser.get(row.browserKey);
+    if (!g) {
+      g = { profiles: [] };
+      byBrowser.set(row.browserKey, g);
+    }
+    g.profiles.push(norm);
+  }
+  for (const [browserKey, { profiles }] of byBrowser) {
+    profiles.sort((a, b) => a.profileName.localeCompare(b.profileName, "en"));
+    const collections = profiles;
+    const hash = hashBookmarkCollections(collections);
+    const existing = repo.getBrowserBookmarkSnapshot(browserKey);
+    if (existing && existing.contentHash === hash) {
+      continue;
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    let deltaJson = null;
+    if (existing) {
+      deltaJson = diffpatcher.diff(existing.collections, collections) ?? null;
+    }
+    repo.upsertBrowserBookmarkSnapshot({
+      id: browserKey,
+      browserType: browserKey,
+      collections,
+      contentHash: hash,
+      updatedAt: now
+    });
+    const logRow = {
+      browserType: browserKey,
+      occurredAt: now,
+      previousHash: existing?.contentHash ?? null,
+      newHash: hash,
+      deltaJson,
+      summary: existing ? deltaJson != null ? "jsondiffpatch" : "hash_mismatch_resync" : "initial"
+    };
+    repo.appendBrowserBookmarkChangeLog(logRow);
+  }
+}
+function scheduleBrowserBookmarkSync(getRepo) {
+  setTimeout(() => {
+    const repo = getRepo();
+    if (!repo) return;
+    void syncBrowserBookmarksToRepository(repo).catch((error) => {
+      console.error("[bookmark-sync]", error);
+    });
+  }, BOOKMARK_BACKGROUND_DELAY_MS);
+}
 function createRootSpace() {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   return {
@@ -586,6 +935,29 @@ CREATE TABLE IF NOT EXISTS research_search_settings (
   provider TEXT NOT NULL DEFAULT 'brave',
   api_key TEXT
 );
+
+CREATE TABLE IF NOT EXISTS browser_bookmark_snapshots (
+  id TEXT PRIMARY KEY,
+  browser_type TEXT NOT NULL,
+  collections_json TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_browser_bookmark_snapshots_updated ON browser_bookmark_snapshots(updated_at);
+
+CREATE TABLE IF NOT EXISTS browser_bookmark_change_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  browser_type TEXT NOT NULL,
+  occurred_at TEXT NOT NULL,
+  previous_hash TEXT,
+  new_hash TEXT NOT NULL,
+  delta_json TEXT,
+  summary TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_browser_bookmark_log_browser ON browser_bookmark_change_log(browser_type);
+CREATE INDEX IF NOT EXISTS idx_browser_bookmark_log_time ON browser_bookmark_change_log(occurred_at);
 `;
 const KNOWN_TABLES = [
   "knowledge_nodes",
@@ -1013,6 +1385,77 @@ class NodeSqliteKnowledgeRepository {
       apiKey: row.api_key == null ? null : String(row.api_key)
     };
   }
+  getBrowserBookmarkSnapshot(browserKey) {
+    const row = this.db.prepare(
+      `SELECT id, browser_type, collections_json, content_hash, updated_at
+         FROM browser_bookmark_snapshots WHERE id = ?`
+    ).get(browserKey);
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      browserType: String(row.browser_type),
+      collections: parseJson(row.collections_json, null),
+      contentHash: String(row.content_hash),
+      updatedAt: String(row.updated_at)
+    };
+  }
+  upsertBrowserBookmarkSnapshot(row) {
+    this.db.prepare(
+      `INSERT INTO browser_bookmark_snapshots (id, browser_type, collections_json, content_hash, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           browser_type = excluded.browser_type,
+           collections_json = excluded.collections_json,
+           content_hash = excluded.content_hash,
+           updated_at = excluded.updated_at`
+    ).run(
+      row.id,
+      row.browserType,
+      serializeJson(row.collections),
+      row.contentHash,
+      row.updatedAt
+    );
+  }
+  listBrowserBookmarkSnapshots() {
+    return this.db.prepare(
+      `SELECT id, browser_type, collections_json, content_hash, updated_at
+         FROM browser_bookmark_snapshots
+         ORDER BY updated_at DESC`
+    ).all().map((row) => bookmarkSnapshotFromRow(row));
+  }
+  appendBrowserBookmarkChangeLog(row) {
+    this.db.prepare(
+      `INSERT INTO browser_bookmark_change_log (browser_type, occurred_at, previous_hash, new_hash, delta_json, summary)
+         VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(
+      row.browserType,
+      row.occurredAt,
+      row.previousHash ?? null,
+      row.newHash,
+      row.deltaJson !== void 0 && row.deltaJson !== null ? serializeJson(row.deltaJson) : null,
+      row.summary ?? null
+    );
+    const idRow = this.db.prepare(`SELECT last_insert_rowid() AS id`).get();
+    const id = Number(idRow?.id ?? 0);
+    return {
+      id,
+      browserType: row.browserType,
+      occurredAt: row.occurredAt,
+      previousHash: row.previousHash,
+      newHash: row.newHash,
+      deltaJson: row.deltaJson ?? null,
+      summary: row.summary ?? null
+    };
+  }
+  listBrowserBookmarkChangeLogs(limit = 500) {
+    const lim = Math.min(Math.max(limit, 1), 2e3);
+    return this.db.prepare(
+      `SELECT id, browser_type, occurred_at, previous_hash, new_hash, delta_json, summary
+         FROM browser_bookmark_change_log
+         ORDER BY id DESC
+         LIMIT ?`
+    ).all(lim).map((row) => bookmarkChangeLogFromRow(row));
+  }
   saveResearchSearchSettings(patch) {
     const cur = this.getResearchSearchSettings();
     let provider = cur?.provider ?? "brave";
@@ -1056,6 +1499,31 @@ class NodeSqliteKnowledgeRepository {
     const row = this.db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get();
     return Number(row?.count ?? 0);
   }
+}
+function bookmarkSnapshotFromRow(row) {
+  return {
+    id: String(row.id),
+    browserType: String(row.browser_type),
+    collections: parseJson(row.collections_json, null),
+    contentHash: String(row.content_hash),
+    updatedAt: String(row.updated_at)
+  };
+}
+function bookmarkChangeLogFromRow(row) {
+  const deltaRaw = row.delta_json;
+  let deltaJson = null;
+  if (typeof deltaRaw === "string" && deltaRaw.length > 0) {
+    deltaJson = parseJson(deltaRaw, null);
+  }
+  return {
+    id: Number(row.id ?? 0),
+    browserType: String(row.browser_type),
+    occurredAt: String(row.occurred_at),
+    previousHash: row.previous_hash == null ? null : String(row.previous_hash),
+    newHash: String(row.new_hash),
+    deltaJson,
+    summary: row.summary == null ? null : String(row.summary)
+  };
 }
 function importJobFromRow(row) {
   return {
@@ -46590,6 +47058,32 @@ app.whenReady().then(async () => {
     if (!window2 || !importService) return null;
     return importService.importBookmarks(window2);
   });
+  ipcMain.handle("bookmarks:scanLocal", () => scanLocalChromiumBookmarkProfiles());
+  ipcMain.handle(
+    "bookmarks:preview",
+    (_event, bookmarksFilePath) => previewLocalBookmarksFile(bookmarksFilePath)
+  );
+  ipcMain.handle("bookmarks:listSnapshots", () => {
+    const repo = importService?.getKnowledgeRepository();
+    return repo?.listBrowserBookmarkSnapshots() ?? [];
+  });
+  ipcMain.handle("bookmarks:listChangeLogs", (_event, limit) => {
+    const repo = importService?.getKnowledgeRepository();
+    return repo?.listBrowserBookmarkChangeLogs(limit) ?? [];
+  });
+  ipcMain.handle("bookmarks:runSync", async () => {
+    const repo = importService?.getKnowledgeRepository();
+    if (!repo) return { ok: false, error: "SQLite repository unavailable" };
+    try {
+      await syncBrowserBookmarksToRepository(repo);
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
   ipcMain.handle("workspace:load", () => importService?.loadWorkspace());
   ipcMain.handle("llm:getSettings", () => llmSettingsStore.getPublic());
   ipcMain.handle(
@@ -46620,6 +47114,7 @@ app.whenReady().then(async () => {
     }
   });
   createMainWindow();
+  scheduleBrowserBookmarkSync(() => importService?.getKnowledgeRepository());
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createMainWindow();

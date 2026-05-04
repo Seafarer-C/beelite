@@ -32,6 +32,26 @@ export interface PersistedParsedImport {
   proposal: GraphProposal;
 }
 
+/** 本地静默同步的浏览器收藏夹快照（按浏览器聚合多 profile） */
+export interface BrowserBookmarkSnapshotRow {
+  id: string;
+  browserType: string;
+  collections: unknown;
+  contentHash: string;
+  updatedAt: string;
+}
+
+/** 收藏夹变更日志（delta 为 jsondiffpatch 结构；首次同步可为 null） */
+export interface BrowserBookmarkChangeLogRow {
+  id: number;
+  browserType: string;
+  occurredAt: string;
+  previousHash: string | null;
+  newHash: string;
+  deltaJson: unknown | null;
+  summary: string | null;
+}
+
 export interface KnowledgeRepository {
   initialize(): void;
   close(): void;
@@ -63,6 +83,14 @@ export interface KnowledgeRepository {
     provider?: string | null;
     apiKey?: string | null;
   }): void;
+
+  getBrowserBookmarkSnapshot(browserKey: string): BrowserBookmarkSnapshotRow | null;
+  upsertBrowserBookmarkSnapshot(row: BrowserBookmarkSnapshotRow): void;
+  listBrowserBookmarkSnapshots(): BrowserBookmarkSnapshotRow[];
+  appendBrowserBookmarkChangeLog(
+    row: Omit<BrowserBookmarkChangeLogRow, "id">
+  ): BrowserBookmarkChangeLogRow;
+  listBrowserBookmarkChangeLogs(limit?: number): BrowserBookmarkChangeLogRow[];
 }
 
 export function serializeJson(value: unknown): string {

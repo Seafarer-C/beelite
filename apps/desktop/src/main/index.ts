@@ -8,6 +8,14 @@ import type {
   ResearchSearchParams,
   ResearchSetSettingsPayload
 } from "@beelite/shared";
+import {
+  previewLocalBookmarksFile,
+  scanLocalChromiumBookmarkProfiles
+} from "./services/localBrowserBookmarks";
+import {
+  scheduleBrowserBookmarkSync,
+  syncBrowserBookmarksToRepository
+} from "./services/bookmarkSyncService";
 import { createImportService, type ImportService } from "./services/importService";
 import { createLlmSettingsStore, type LlmSettingsStore } from "./services/llmSettingsStore";
 import { closeResearchBrowser } from "@beelite/research-engine";
@@ -90,6 +98,31 @@ app.whenReady().then(async () => {
     if (!window || !importService) return null;
     return importService.importBookmarks(window);
   });
+  ipcMain.handle("bookmarks:scanLocal", () => scanLocalChromiumBookmarkProfiles());
+  ipcMain.handle("bookmarks:preview", (_event, bookmarksFilePath: string) =>
+    previewLocalBookmarksFile(bookmarksFilePath)
+  );
+  ipcMain.handle("bookmarks:listSnapshots", () => {
+    const repo = importService?.getKnowledgeRepository();
+    return repo?.listBrowserBookmarkSnapshots() ?? [];
+  });
+  ipcMain.handle("bookmarks:listChangeLogs", (_event, limit?: number) => {
+    const repo = importService?.getKnowledgeRepository();
+    return repo?.listBrowserBookmarkChangeLogs(limit) ?? [];
+  });
+  ipcMain.handle("bookmarks:runSync", async () => {
+    const repo = importService?.getKnowledgeRepository();
+    if (!repo) return { ok: false as const, error: "SQLite repository unavailable" };
+    try {
+      await syncBrowserBookmarksToRepository(repo);
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
   ipcMain.handle("workspace:load", () => importService?.loadWorkspace());
   ipcMain.handle("llm:getSettings", () => llmSettingsStore!.getPublic());
   ipcMain.handle("llm:setProvider", (_event, payload: LlmSetProviderPayload) =>
@@ -117,6 +150,8 @@ app.whenReady().then(async () => {
   });
 
   createMainWindow();
+
+  scheduleBrowserBookmarkSync(() => importService?.getKnowledgeRepository());
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

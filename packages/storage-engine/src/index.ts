@@ -92,6 +92,29 @@ CREATE TABLE IF NOT EXISTS research_search_settings (
   provider TEXT NOT NULL DEFAULT 'brave',
   api_key TEXT
 );
+
+CREATE TABLE IF NOT EXISTS browser_bookmark_snapshots (
+  id TEXT PRIMARY KEY,
+  browser_type TEXT NOT NULL,
+  collections_json TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_browser_bookmark_snapshots_updated ON browser_bookmark_snapshots(updated_at);
+
+CREATE TABLE IF NOT EXISTS browser_bookmark_change_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  browser_type TEXT NOT NULL,
+  occurred_at TEXT NOT NULL,
+  previous_hash TEXT,
+  new_hash TEXT NOT NULL,
+  delta_json TEXT,
+  summary TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_browser_bookmark_log_browser ON browser_bookmark_change_log(browser_type);
+CREATE INDEX IF NOT EXISTS idx_browser_bookmark_log_time ON browser_bookmark_change_log(occurred_at);
 `;
 
 export const STORAGE_BUCKETS = {

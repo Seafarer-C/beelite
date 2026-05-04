@@ -13,6 +13,12 @@ contextBridge.exposeInMainWorld("beelite", {
   listSources: () => ipcRenderer.invoke("imports:listSources"),
   importChatGpt: () => ipcRenderer.invoke("imports:chatgpt"),
   importBookmarks: () => ipcRenderer.invoke("imports:bookmarks"),
+  scanLocalBrowserBookmarks: () => ipcRenderer.invoke("bookmarks:scanLocal"),
+  previewLocalBookmarksFile: (bookmarksFilePath: string) =>
+    ipcRenderer.invoke("bookmarks:preview", bookmarksFilePath),
+  listBookmarkSnapshots: () => ipcRenderer.invoke("bookmarks:listSnapshots"),
+  listBookmarkChangeLogs: (limit?: number) => ipcRenderer.invoke("bookmarks:listChangeLogs", limit),
+  runBookmarkSync: () => ipcRenderer.invoke("bookmarks:runSync"),
   loadWorkspace: () => ipcRenderer.invoke("workspace:load"),
   getLlmSettings: () => ipcRenderer.invoke("llm:getSettings"),
   setLlmProvider: (payload: LlmSetProviderPayload) => ipcRenderer.invoke("llm:setProvider", payload),

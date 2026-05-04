@@ -22,6 +22,7 @@
     "@beelite/whiteboard-engine": "workspace:*",
     "@mixmark-io/domino": "^2.2.0",
     "@vueuse/core": "^14.1.0",
+    "jsondiffpatch": "^0.7.3",
     "lucide-vue-next": "^1.0.0",
     "pinia": "^3.0.4",
     "vue": "^3.5.25"

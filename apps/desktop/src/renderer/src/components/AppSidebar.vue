@@ -1,17 +1,13 @@
 <script setup lang="ts">
 import {
-  BrainCircuit,
   ChevronDown,
   Download,
   HelpCircle,
-  MessageCircle,
   Minus,
   NotebookPen,
   Plus,
   Settings,
   Sparkles,
-  Star,
-  Tags,
   Trash2,
   Vault
 } from "lucide-vue-next";
@@ -24,12 +20,7 @@ const zoomLabel = computed(() => `${Math.round(store.viewport.zoom * 100)}%`);
 
 const navItems = [
   { label: "知识宇宙", icon: Vault, active: true },
-  { label: "AI Research", icon: BrainCircuit },
-  { label: "收藏夹", icon: Star },
-  { label: "对话历史", icon: MessageCircle },
-  { label: "标签", icon: Tags },
   { label: "笔记", icon: NotebookPen },
-  { label: "智能体", icon: Sparkles }
 ];
 
 const utilityItems = [
