@@ -360,6 +360,14 @@ button {
 .block-frame {
   position: absolute;
   transform-origin: center;
+  /* 避免拖拽卡片时选中文字或拖出图片，干扰画布手势 */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.block-frame img,
+.block-frame video {
+  -webkit-user-drag: none;
 }
 
 .knowledge-card {

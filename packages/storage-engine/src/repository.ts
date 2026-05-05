@@ -52,6 +52,36 @@ export interface BrowserBookmarkChangeLogRow {
   summary: string | null;
 }
 
+/** sqlite_master 中的表 / 视图摘要（不含 sqlite_% 内部对象） */
+export interface SqliteInspectorTableSummary {
+  name: string;
+  kind: "table" | "view";
+}
+
+export interface SqliteInspectorColumnInfo {
+  cid: number;
+  name: string;
+  type: string;
+  notNull: boolean;
+  defaultValue: unknown;
+  primaryKey: boolean;
+}
+
+export interface SqliteInspectorPageResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  total: number;
+}
+
+export interface SqliteInspectorQueryResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
+}
+
+export type SqliteInspectorSqlResult =
+  | { ok: true; result: SqliteInspectorQueryResult }
+  | { ok: false; error: string };
+
 export interface KnowledgeRepository {
   initialize(): void;
   close(): void;
@@ -91,6 +121,15 @@ export interface KnowledgeRepository {
     row: Omit<BrowserBookmarkChangeLogRow, "id">
   ): BrowserBookmarkChangeLogRow;
   listBrowserBookmarkChangeLogs(limit?: number): BrowserBookmarkChangeLogRow[];
+
+  /** 本地 SQLite 调试：列出用户表与视图 */
+  inspectListTables(): SqliteInspectorTableSummary[];
+  /** 列结构（PRAGMA table_info） */
+  inspectTableColumns(tableName: string): SqliteInspectorColumnInfo[];
+  /** 分页读取整表（SELECT *） */
+  inspectTablePage(tableName: string, limit: number, offset: number): SqliteInspectorPageResult;
+  /** 仅允许 SELECT / WITH；自动追加行数上限 */
+  inspectRunReadOnlySql(sql: string): SqliteInspectorSqlResult;
 }
 
 export function serializeJson(value: unknown): string {

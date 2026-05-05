@@ -20,14 +20,48 @@ import {
   type BrowserBookmarkSnapshotRow,
   type KnowledgeRepository,
   type LlmProviderPersistRow,
+  type PersistedParsedImport,
   type ResearchSearchPersistRow,
-  type PersistedParsedImport
+  type SqliteInspectorColumnInfo,
+  type SqliteInspectorPageResult,
+  type SqliteInspectorSqlResult,
+  type SqliteInspectorTableSummary
 } from "./repository";
 
 type SQLiteDatabase = Pick<DatabaseSync, "close" | "exec" | "prepare">;
 
 interface CountRow {
   count?: number;
+}
+
+const SAFE_SQL_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function quoteSqlIdent(name: string): string {
+  if (!SAFE_SQL_IDENT.test(name)) {
+    throw new Error(`非法表名或标识符：${name}`);
+  }
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+function validateReadOnlySql(raw: string): string {
+  const trimmed = raw.trim();
+  const single = trimmed.replace(/;+\s*$/g, "");
+  if (/;\s*\S/.test(single)) {
+    throw new Error("不支持多条 SQL 语句");
+  }
+  const body = single.trim();
+  if (!/^(SELECT|WITH)\b/is.test(body)) {
+    throw new Error("仅允许只读查询：请以 SELECT 或 WITH 开头");
+  }
+  return body;
+}
+
+/** 若语句未含 LIMIT，则追加上限以防拖垮界面 */
+function capSelectRowLimit(sql: string, maxRows: number): string {
+  if (/\blimit\b\s+\d+/i.test(sql)) {
+    return sql;
+  }
+  return `${sql} LIMIT ${maxRows}`;
 }
 
 export async function createNodeSqliteRepository(path: string): Promise<KnowledgeRepository> {
@@ -557,6 +591,63 @@ export class NodeSqliteKnowledgeRepository implements KnowledgeRepository {
       )
       .all(lim)
       .map((row) => bookmarkChangeLogFromRow(row as Record<string, unknown>));
+  }
+
+  inspectListTables(): SqliteInspectorTableSummary[] {
+    const rows = this.db
+      .prepare(
+        `SELECT name, type FROM sqlite_master
+         WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'
+         ORDER BY name COLLATE NOCASE ASC`
+      )
+      .all() as Record<string, unknown>[];
+
+    return rows.map((row) => ({
+      name: String(row.name),
+      kind: row.type === "view" ? ("view" as const) : ("table" as const)
+    }));
+  }
+
+  inspectTableColumns(tableName: string): SqliteInspectorColumnInfo[] {
+    const safe = quoteSqlIdent(tableName);
+    const rows = this.db.prepare(`PRAGMA table_info(${safe})`).all() as Record<string, unknown>[];
+    return rows.map((row) => ({
+      cid: Number(row.cid ?? 0),
+      name: String(row.name),
+      type: String(row.type ?? ""),
+      notNull: Number(row.notnull ?? 0) !== 0,
+      defaultValue: row.dflt_value,
+      primaryKey: Number(row.pk ?? 0) !== 0
+    }));
+  }
+
+  inspectTablePage(tableName: string, limit: number, offset: number): SqliteInspectorPageResult {
+    const safe = quoteSqlIdent(tableName);
+    const cols = this.inspectTableColumns(tableName).map((c) => c.name);
+    const lim = Math.min(Math.max(Math.floor(limit), 1), 500);
+    const off = Math.max(Math.floor(offset), 0);
+
+    const totalRow = this.db.prepare(`SELECT COUNT(*) AS n FROM ${safe}`).get() as { n?: unknown };
+    const total = Number(totalRow?.n ?? 0);
+
+    const rows = this.db
+      .prepare(`SELECT * FROM ${safe} LIMIT ? OFFSET ?`)
+      .all(lim, off) as Record<string, unknown>[];
+
+    return { columns: cols, rows, total };
+  }
+
+  inspectRunReadOnlySql(sql: string): SqliteInspectorSqlResult {
+    try {
+      const capped = capSelectRowLimit(validateReadOnlySql(sql), 500);
+      const stmt = this.db.prepare(capped);
+      const rows = stmt.all() as Record<string, unknown>[];
+      const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+      return { ok: true, result: { columns, rows } };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: message };
+    }
   }
 
   saveResearchSearchSettings(patch: { provider?: string | null; apiKey?: string | null }): void {

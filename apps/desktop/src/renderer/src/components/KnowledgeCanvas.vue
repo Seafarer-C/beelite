@@ -54,7 +54,7 @@ const dragState = reactive({
   lastY: 0
 });
 
-/** 整块卡片：位移超过阈值视为拖拽，否则 pointerup 时打开预览（图片 / 视频 / Markdown） */
+/** 整块卡片：不在 pointerdown 时选中/打开预览，避免干扰拖拽；pointerup 再选中，未拖拽则打开预览 */
 const cardGesture = reactive({
   blockId: null as string | null,
   pointerId: 0,
@@ -128,7 +128,6 @@ function onBlockPointerDown(event: PointerEvent, block: KnowledgeBlock): void {
   const el = event.currentTarget as HTMLElement;
   cardGesture.captureEl = el;
   el.setPointerCapture(event.pointerId);
-  store.selectBlock(block.id);
 }
 
 function onPointerMove(event: PointerEvent): void {
@@ -176,10 +175,13 @@ function endDrag(event: PointerEvent): void {
     cardGesture.dragging = false;
     cardGesture.captureEl = null;
 
-    if (!wasDragging && bid) {
-      const b = store.blocks.find((x) => x.id === bid);
-      if (b && (b.type === "image" || b.type === "markdown" || b.type === "video")) {
-        store.setPreviewBlock(bid);
+    if (bid) {
+      store.selectBlock(bid);
+      if (!wasDragging) {
+        const b = store.blocks.find((x) => x.id === bid);
+        if (b && (b.type === "image" || b.type === "markdown" || b.type === "video")) {
+          store.setPreviewBlock(bid);
+        }
       }
     }
     return;

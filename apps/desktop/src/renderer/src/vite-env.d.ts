@@ -18,7 +18,11 @@ import type {
 import type { LocalBookmarksPreview, LocalChromiumBookmarkProfile } from "./types/localBookmarks";
 import type {
   BrowserBookmarkChangeLogRow,
-  BrowserBookmarkSnapshotRow
+  BrowserBookmarkSnapshotRow,
+  SqliteInspectorColumnInfo,
+  SqliteInspectorPageResult,
+  SqliteInspectorSqlResult,
+  SqliteInspectorTableSummary
 } from "@beelite/storage-engine";
 
 declare global {
@@ -47,6 +51,20 @@ declare global {
       researchSearch: (params: ResearchSearchParams) => Promise<ResearchSearchResult>;
       researchFetchPage: (params: ResearchFetchPageParams) => Promise<ResearchFetchPageResult>;
       openExternal: (url: string) => Promise<boolean>;
+      dbListTables: () => Promise<
+        { ok: true; tables: SqliteInspectorTableSummary[] } | { ok: false; error: string }
+      >;
+      dbTableColumns: (
+        tableName: string
+      ) => Promise<
+        { ok: true; columns: SqliteInspectorColumnInfo[] } | { ok: false; error: string }
+      >;
+      dbTablePage: (
+        tableName: string,
+        limit: number,
+        offset: number
+      ) => Promise<{ ok: true; page: SqliteInspectorPageResult } | { ok: false; error: string }>;
+      dbRunReadOnlySql: (sql: string) => Promise<SqliteInspectorSqlResult>;
     };
   }
 }

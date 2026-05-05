@@ -1032,6 +1032,31 @@ function applySqliteSchemaPatches(db) {
     }
   }
 }
+const SAFE_SQL_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+function quoteSqlIdent(name) {
+  if (!SAFE_SQL_IDENT.test(name)) {
+    throw new Error(`非法表名或标识符：${name}`);
+  }
+  return `"${name.replace(/"/g, '""')}"`;
+}
+function validateReadOnlySql(raw) {
+  const trimmed = raw.trim();
+  const single = trimmed.replace(/;+\s*$/g, "");
+  if (/;\s*\S/.test(single)) {
+    throw new Error("不支持多条 SQL 语句");
+  }
+  const body2 = single.trim();
+  if (!/^(SELECT|WITH)\b/is.test(body2)) {
+    throw new Error("仅允许只读查询：请以 SELECT 或 WITH 开头");
+  }
+  return body2;
+}
+function capSelectRowLimit(sql, maxRows) {
+  if (/\blimit\b\s+\d+/i.test(sql)) {
+    return sql;
+  }
+  return `${sql} LIMIT ${maxRows}`;
+}
 async function createNodeSqliteRepository(path) {
   const sqlite = await import("node:sqlite");
   const db = new sqlite.DatabaseSync(path, {
@@ -1455,6 +1480,51 @@ class NodeSqliteKnowledgeRepository {
          ORDER BY id DESC
          LIMIT ?`
     ).all(lim).map((row) => bookmarkChangeLogFromRow(row));
+  }
+  inspectListTables() {
+    const rows = this.db.prepare(
+      `SELECT name, type FROM sqlite_master
+         WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'
+         ORDER BY name COLLATE NOCASE ASC`
+    ).all();
+    return rows.map((row) => ({
+      name: String(row.name),
+      kind: row.type === "view" ? "view" : "table"
+    }));
+  }
+  inspectTableColumns(tableName) {
+    const safe = quoteSqlIdent(tableName);
+    const rows = this.db.prepare(`PRAGMA table_info(${safe})`).all();
+    return rows.map((row) => ({
+      cid: Number(row.cid ?? 0),
+      name: String(row.name),
+      type: String(row.type ?? ""),
+      notNull: Number(row.notnull ?? 0) !== 0,
+      defaultValue: row.dflt_value,
+      primaryKey: Number(row.pk ?? 0) !== 0
+    }));
+  }
+  inspectTablePage(tableName, limit, offset) {
+    const safe = quoteSqlIdent(tableName);
+    const cols = this.inspectTableColumns(tableName).map((c) => c.name);
+    const lim = Math.min(Math.max(Math.floor(limit), 1), 500);
+    const off = Math.max(Math.floor(offset), 0);
+    const totalRow = this.db.prepare(`SELECT COUNT(*) AS n FROM ${safe}`).get();
+    const total = Number(totalRow?.n ?? 0);
+    const rows = this.db.prepare(`SELECT * FROM ${safe} LIMIT ? OFFSET ?`).all(lim, off);
+    return { columns: cols, rows, total };
+  }
+  inspectRunReadOnlySql(sql) {
+    try {
+      const capped = capSelectRowLimit(validateReadOnlySql(sql), 500);
+      const stmt = this.db.prepare(capped);
+      const rows = stmt.all();
+      const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+      return { ok: true, result: { columns, rows } };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: message };
+    }
   }
   saveResearchSearchSettings(patch) {
     const cur = this.getResearchSearchSettings();
@@ -47085,6 +47155,50 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle("workspace:load", () => importService?.loadWorkspace());
+  ipcMain.handle("db:listTables", () => {
+    const repo = importService?.getKnowledgeRepository();
+    if (!repo) return { ok: false, error: "SQLite repository unavailable" };
+    try {
+      return { ok: true, tables: repo.inspectListTables() };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  ipcMain.handle("db:tableColumns", (_event, tableName) => {
+    const repo = importService?.getKnowledgeRepository();
+    if (!repo) return { ok: false, error: "SQLite repository unavailable" };
+    try {
+      return { ok: true, columns: repo.inspectTableColumns(String(tableName)) };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  ipcMain.handle("db:tablePage", (_event, tableName, limit, offset) => {
+    const repo = importService?.getKnowledgeRepository();
+    if (!repo) return { ok: false, error: "SQLite repository unavailable" };
+    try {
+      return {
+        ok: true,
+        page: repo.inspectTablePage(String(tableName), Number(limit), Number(offset))
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  ipcMain.handle("db:runReadOnlySql", (_event, sql) => {
+    const repo = importService?.getKnowledgeRepository();
+    if (!repo) return { ok: false, error: "SQLite repository unavailable" };
+    return repo.inspectRunReadOnlySql(String(sql));
+  });
   ipcMain.handle("llm:getSettings", () => llmSettingsStore.getPublic());
   ipcMain.handle(
     "llm:setProvider",

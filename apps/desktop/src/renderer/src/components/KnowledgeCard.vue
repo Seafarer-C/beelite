@@ -103,6 +103,7 @@ function bodyWithHighlights(): string {
           class="image-card-img"
           :src="imageSrc"
           alt=""
+          draggable="false"
           loading="lazy"
           decoding="async"
         />
@@ -158,7 +159,7 @@ function bodyWithHighlights(): string {
     <template v-else-if="block.type === 'knowledge' && mediaLayout">
       <div class="media-header-card">
         <div class="media-header-photo">
-          <img :src="heroImage" alt="" loading="lazy" decoding="async" />
+          <img :src="heroImage" alt="" draggable="false" loading="lazy" decoding="async" />
         </div>
         <div class="media-header-body">
           <h2>{{ title }}</h2>

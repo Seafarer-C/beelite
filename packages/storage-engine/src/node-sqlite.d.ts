@@ -3,7 +3,7 @@ declare module "node:sqlite" {
   export interface StatementSync {
     run(...params: unknown[]): { changes: number; lastInsertRowid?: bigint | number };
     get(...params: unknown[]): unknown;
-    all(...params: unknown[]): unknown;
+    all(...params: unknown[]): Record<string, unknown>[];
   }
 
   export class DatabaseSync {

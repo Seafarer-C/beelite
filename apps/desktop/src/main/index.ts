@@ -124,6 +124,51 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle("workspace:load", () => importService?.loadWorkspace());
+
+  ipcMain.handle("db:listTables", () => {
+    const repo = importService?.getKnowledgeRepository();
+    if (!repo) return { ok: false as const, error: "SQLite repository unavailable" };
+    try {
+      return { ok: true as const, tables: repo.inspectListTables() };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  ipcMain.handle("db:tableColumns", (_event, tableName: string) => {
+    const repo = importService?.getKnowledgeRepository();
+    if (!repo) return { ok: false as const, error: "SQLite repository unavailable" };
+    try {
+      return { ok: true as const, columns: repo.inspectTableColumns(String(tableName)) };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  ipcMain.handle("db:tablePage", (_event, tableName: string, limit: number, offset: number) => {
+    const repo = importService?.getKnowledgeRepository();
+    if (!repo) return { ok: false as const, error: "SQLite repository unavailable" };
+    try {
+      return {
+        ok: true as const,
+        page: repo.inspectTablePage(String(tableName), Number(limit), Number(offset))
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  ipcMain.handle("db:runReadOnlySql", (_event, sql: string) => {
+    const repo = importService?.getKnowledgeRepository();
+    if (!repo) return { ok: false as const, error: "SQLite repository unavailable" };
+    return repo.inspectRunReadOnlySql(String(sql));
+  });
   ipcMain.handle("llm:getSettings", () => llmSettingsStore!.getPublic());
   ipcMain.handle("llm:setProvider", (_event, payload: LlmSetProviderPayload) =>
     llmSettingsStore!.setProvider(payload)

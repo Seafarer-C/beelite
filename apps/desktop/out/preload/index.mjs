@@ -18,5 +18,9 @@ contextBridge.exposeInMainWorld("beelite", {
   setResearchSettings: (payload) => ipcRenderer.invoke("research:setSettings", payload),
   researchSearch: (params) => ipcRenderer.invoke("research:search", params),
   researchFetchPage: (params) => ipcRenderer.invoke("research:fetchPage", params),
-  openExternal: (url) => ipcRenderer.invoke("app:openExternal", url)
+  openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
+  dbListTables: () => ipcRenderer.invoke("db:listTables"),
+  dbTableColumns: (tableName) => ipcRenderer.invoke("db:tableColumns", tableName),
+  dbTablePage: (tableName, limit, offset) => ipcRenderer.invoke("db:tablePage", tableName, limit, offset),
+  dbRunReadOnlySql: (sql) => ipcRenderer.invoke("db:runReadOnlySql", sql)
 });
