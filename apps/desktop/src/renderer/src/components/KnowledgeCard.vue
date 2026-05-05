@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, Circle, Clock, GitBranch, Sparkles, Star } from "lucide-vue-next";
+import { ArrowUp, Check, Circle, Clock, GitBranch, Sparkles, Star } from "lucide-vue-next";
 import { computed } from "vue";
 import type { KnowledgeBlock } from "@beelite/shared";
 import { confidenceBand } from "@beelite/graph-engine";
@@ -30,7 +30,7 @@ const steps = computed(() => {
   const value = props.block.content.steps;
   return Array.isArray(value) ? value.map(String) : [];
 });
-const isSelected = computed(() => store.selectedBlockId === props.block.id);
+const isSelected = computed(() => store.selectedBlockIds.includes(props.block.id));
 
 const bodyText = computed(() => String(props.block.content.body ?? ""));
 const highlights = computed((): string[] => {
@@ -146,12 +146,20 @@ function bodyWithHighlights(): string {
     </template>
 
     <template v-else-if="block.type === 'knowledge' && isFolder">
-      <div class="folder-card-inner">
-        <Star :size="22" class="folder-star" fill="currentColor" />
-        <div class="folder-meta">
-          <span class="folder-count">{{ folderCount }} items</span>
-          <h2>{{ title }}</h2>
-          <p>{{ summary }}</p>
+      <div class="folder-card-shell">
+        <div class="folder-card-tab" aria-hidden="true" />
+        <div class="folder-card-face">
+          <button type="button" class="folder-upload-hint" aria-label="上传" data-no-card-drag>
+            <ArrowUp :size="14" stroke-width="2" />
+          </button>
+          <div class="folder-card-bottom">
+            <div class="folder-meta">
+              <span class="folder-count">{{ folderCount }} Items</span>
+              <h2>{{ title }}</h2>
+              <p>{{ summary }}</p>
+            </div>
+            <Star :size="22" class="folder-star" fill="currentColor" />
+          </div>
         </div>
       </div>
     </template>

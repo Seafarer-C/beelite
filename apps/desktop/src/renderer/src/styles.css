@@ -37,6 +37,24 @@ button {
   background:
     radial-gradient(circle at 32% 22%, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0) 24%),
     linear-gradient(140deg, #fbfbf9 0%, #f6f6f2 44%, #f0f2f0 100%);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.app-shell input,
+.app-shell textarea,
+.app-shell select,
+.app-shell [contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.app-shell img,
+.app-shell svg,
+.app-shell video {
+  -webkit-user-drag: none;
+  user-drag: none;
 }
 
 .sidebar {
@@ -357,12 +375,152 @@ button {
   will-change: transform;
 }
 
+.canvas-surface--focus-back {
+  z-index: 2;
+}
+
+.canvas-folder-focus-mask {
+  position: absolute;
+  z-index: 12;
+  inset: 0;
+  background: rgba(10, 10, 12, 0.46);
+  backdrop-filter: blur(0.5px);
+}
+
+.canvas-surface--focus-front {
+  z-index: 18;
+  pointer-events: none;
+}
+
+.canvas-surface--focus-front .block-frame {
+  pointer-events: auto;
+}
+
+.block-frame--under-folder-focus {
+  opacity: 0.92;
+  filter: saturate(0.88);
+}
+
+.block-frame--folder-focus-elevated {
+  filter: drop-shadow(0 28px 48px rgba(12, 14, 18, 0.22));
+}
+
+/* 文件夹展开后的子卡片内容：略轻的阴影 */
+.canvas-surface--focus-front .block-frame--folder-focus-elevated .block-frame-inner--folder-reveal {
+  filter: drop-shadow(0 14px 32px rgba(14, 15, 18, 0.12));
+}
+
 .block-frame {
   position: absolute;
   transform-origin: center;
   /* 避免拖拽卡片时选中文字或拖出图片，干扰画布手势 */
   user-select: none;
   -webkit-user-select: none;
+}
+
+.block-frame-inner {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 100%;
+  border-radius: inherit;
+}
+
+/* 文件夹展开：直属子节点自下而上、略放大浮现（父层位移/旋转仍在外层 block-frame） */
+.block-frame-inner--folder-reveal {
+  animation: folderStripReveal 0.62s cubic-bezier(0.22, 1, 0.32, 1) both;
+}
+
+@keyframes folderStripReveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 40px, 0) scale(0.82);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .block-frame-inner--folder-reveal {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.canvas-marquee {
+  position: absolute;
+  z-index: 900;
+  pointer-events: none;
+  border: 1px dashed rgba(28, 101, 255, 0.55);
+  border-radius: 4px;
+  background: rgba(28, 101, 255, 0.07);
+}
+
+.canvas-stage--placement {
+  cursor: crosshair;
+}
+
+/* 条状缩放手柄（四边中点） */
+.block-resize-handle {
+  position: absolute;
+  z-index: 60;
+  box-sizing: border-box;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(55, 55, 52, 0.88);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.65);
+}
+
+.block-resize-handle:hover {
+  background: rgba(25, 25, 23, 0.95);
+}
+
+.block-resize-handle--n {
+  top: 0;
+  left: 50%;
+  width: 36%;
+  max-width: 120px;
+  min-width: 40px;
+  height: 4px;
+  transform: translate(-50%, -50%);
+  cursor: ns-resize;
+}
+
+.block-resize-handle--s {
+  bottom: 0;
+  left: 50%;
+  width: 36%;
+  max-width: 120px;
+  min-width: 40px;
+  height: 5px;
+  transform: translate(-50%, 50%);
+  cursor: ns-resize;
+  background: rgba(22, 22, 20, 0.92);
+}
+
+.block-resize-handle--w {
+  left: 0;
+  top: 50%;
+  width: 4px;
+  height: 38%;
+  max-height: 140px;
+  min-height: 48px;
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+}
+
+.block-resize-handle--e {
+  right: 0;
+  top: 50%;
+  width: 4px;
+  height: 38%;
+  max-height: 140px;
+  min-height: 48px;
+  transform: translate(50%, -50%);
+  cursor: ew-resize;
 }
 
 .block-frame img,
@@ -412,6 +570,107 @@ button {
 .knowledge-card.is-media-header {
   padding: 0;
   overflow: hidden;
+}
+
+.knowledge-card.is-folder {
+  padding: 0;
+  overflow: visible;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.knowledge-card.is-folder:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.knowledge-card.is-folder.selected .folder-card-face {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 0 0 2px rgba(28, 101, 255, 0.38);
+}
+
+.knowledge-card.is-folder .folder-card-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  filter: drop-shadow(0 10px 26px rgba(18, 19, 17, 0.14));
+}
+
+.folder-card-tab {
+  position: relative;
+  z-index: 0;
+  width: 42%;
+  max-width: 160px;
+  height: 14px;
+  margin-bottom: -8px;
+  margin-left: 10px;
+  border-radius: 10px 10px 0 0;
+  background: linear-gradient(180deg, #ececea 0%, #e4e4e1 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.folder-card-face {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px 18px 14px;
+  border-radius: 14px;
+  background: linear-gradient(165deg, #fafaf8 0%, #f1f1ee 48%, #ebebe8 100%);
+  border: 1px solid rgba(28, 28, 26, 0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.folder-upload-hint {
+  align-self: center;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  margin-bottom: 10px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(26, 26, 24, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 253, 0.95);
+  color: rgba(48, 48, 46, 0.55);
+  cursor: default;
+  box-shadow: 0 1px 3px rgba(18, 18, 16, 0.06);
+}
+
+.folder-upload-hint:hover {
+  color: rgba(28, 101, 255, 0.85);
+  border-color: rgba(28, 101, 255, 0.22);
+}
+
+.folder-card-bottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  min-height: 0;
+}
+
+.folder-card-face .folder-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.folder-card-face .folder-star {
+  flex-shrink: 0;
+  color: #1a1a18;
+  opacity: 0.88;
 }
 
 .knowledge-card.type-image.is-stamp {
@@ -468,33 +727,28 @@ button {
   color: rgba(255, 255, 255, 0.92);
 }
 
-.folder-card-inner {
-  display: grid;
-  grid-template-columns: 40px 1fr;
-  gap: 14px;
-  align-items: start;
-}
-
-.folder-star {
-  color: #e8b022;
-}
-
 .folder-meta .folder-count {
   display: block;
-  margin-bottom: 4px;
-  color: #878982;
+  margin-bottom: 6px;
+  color: #8e908a;
   font-size: 11px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
 }
 
 .folder-meta h2 {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   font-size: 17px;
   font-weight: 720;
+  color: #1f211e;
+  line-height: 1.25;
 }
 
 .folder-meta p {
   margin: 0;
   font-size: 13px;
+  line-height: 1.45;
+  color: #5c5e59;
 }
 
 .media-header-card {
@@ -835,6 +1089,65 @@ button {
 .tool-button.active {
   color: #1c65ff;
   background: rgba(28, 101, 255, 0.1);
+}
+
+.canvas-toolbar__sep {
+  flex-shrink: 0;
+  width: 1px;
+  height: 28px;
+  margin: 0 5px;
+  background: rgba(20, 20, 18, 0.1);
+}
+
+.canvas-toolbar--batch {
+  gap: 10px;
+  padding: 8px 16px;
+  height: auto;
+  min-height: 58px;
+}
+
+.canvas-toolbar__batch-label {
+  margin-right: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a4d48;
+  white-space: nowrap;
+}
+
+.tool-button--wide {
+  display: inline-flex;
+  width: auto;
+  min-width: 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+}
+
+.tool-button--wide span {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.tool-button--danger {
+  color: #a32121;
+}
+
+.tool-button--danger:hover {
+  color: #fff;
+  background: rgba(183, 28, 28, 0.88);
+}
+
+.tool-button--danger.active {
+  color: #fff;
+  background: rgba(183, 28, 28, 0.92);
+}
+
+.tool-button--ghost {
+  opacity: 0.65;
+}
+
+.tool-button--ghost:hover {
+  opacity: 1;
 }
 
 .provider-dock {

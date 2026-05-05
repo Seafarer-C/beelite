@@ -53,14 +53,40 @@ function openDatabaseViewer(): void {
   window.location.hash = "#db-viewer";
 }
 
+/** 画布撤销/重做：捕获阶段优先于子组件，避免与输入框冲突 */
+function onCanvasUndoRedoKeydown(event: KeyboardEvent): void {
+  if (researchTestMode.value || bookmarksTestMode.value || databaseViewerMode.value) {
+    return;
+  }
+  if (event.defaultPrevented) return;
+  const el = event.target as HTMLElement | null;
+  if (el?.closest("input, textarea, select, [contenteditable=true]")) return;
+  if (workspace.previewBlockId || workspace.modelSettingsOpen) return;
+
+  const mod = event.metaKey || event.ctrlKey;
+  if (!mod) return;
+  const key = event.key.toLowerCase();
+  if (key === "z" && !event.shiftKey) {
+    event.preventDefault();
+    workspace.undoCanvas();
+    return;
+  }
+  if (key === "y" || (key === "z" && event.shiftKey)) {
+    event.preventDefault();
+    workspace.redoCanvas();
+  }
+}
+
 onMounted(() => {
   syncDevTestPageFromHash();
   window.addEventListener("hashchange", syncDevTestPageFromHash);
+  window.addEventListener("keydown", onCanvasUndoRedoKeydown, true);
   void workspace.bootstrap();
 });
 
 onUnmounted(() => {
   window.removeEventListener("hashchange", syncDevTestPageFromHash);
+  window.removeEventListener("keydown", onCanvasUndoRedoKeydown, true);
 });
 </script>
 
