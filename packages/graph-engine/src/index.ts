@@ -56,3 +56,12 @@ export function relationLabel(relationType: RelationType): string {
 
   return labels[relationType];
 }
+
+export {
+  buildGraphOverlaySegments,
+  defaultBlockIdForNode,
+  filterSegmentsForNodes,
+  nodeIdsFromKnowledgeNodes,
+  type WorldPoint,
+  type WorldSegment
+} from "./overlay.js";

@@ -12,6 +12,7 @@ export type BlockType =
   | "research"
   | "graph"
   | "image"
+  | "video"
   | "task";
 
 export type SourceType =

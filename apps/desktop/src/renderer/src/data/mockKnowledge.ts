@@ -5,9 +5,11 @@ import type {
   KnowledgeSpace
 } from "@beelite/shared";
 import { createGraphProposal } from "@beelite/graph-engine";
-import { createRootSpace, mapNodesToBlocks } from "@beelite/space-engine";
+import { createRootSpace } from "@beelite/space-engine";
+import knowledgeUniverseHero from "../assets/knowledge-universe-hero.png";
 
 const now = new Date().toISOString();
+const spaceId = "space-root";
 
 export const mockNodes: KnowledgeNode[] = [
   {
@@ -24,7 +26,7 @@ export const mockNodes: KnowledgeNode[] = [
     tags: ["AI", "检索", "系统设计"],
     aliases: ["Retrieval Augmented Generation"],
     relationIds: ["edge-rag-agent", "edge-rag-graph"],
-    spaceIds: ["space-root"],
+    spaceIds: [spaceId],
     metadata: {}
   },
   {
@@ -41,7 +43,7 @@ export const mockNodes: KnowledgeNode[] = [
     tags: ["pi-mono", "tools", "runtime"],
     aliases: ["Local Agent"],
     relationIds: ["edge-rag-agent"],
-    spaceIds: ["space-root"],
+    spaceIds: [spaceId],
     metadata: {}
   },
   {
@@ -58,7 +60,7 @@ export const mockNodes: KnowledgeNode[] = [
     tags: ["Graph", "Schema", "Confidence"],
     aliases: ["知识图谱引擎"],
     relationIds: ["edge-rag-graph"],
-    spaceIds: ["space-root"],
+    spaceIds: [spaceId],
     metadata: {}
   },
   {
@@ -75,7 +77,7 @@ export const mockNodes: KnowledgeNode[] = [
     tags: ["Whiteboard", "UX"],
     aliases: ["空间记忆"],
     relationIds: [],
-    spaceIds: ["space-root"],
+    spaceIds: [spaceId],
     metadata: {}
   },
   {
@@ -92,7 +94,7 @@ export const mockNodes: KnowledgeNode[] = [
     tags: ["Research", "WebGPU", "AI"],
     aliases: [],
     relationIds: [],
-    spaceIds: ["space-root"],
+    spaceIds: [spaceId],
     metadata: {}
   }
 ];
@@ -127,68 +129,279 @@ export const rootSpace: KnowledgeSpace = {
   nodeIds: mockNodes.map((node) => node.id)
 };
 
-const mappedBlocks = mapNodesToBlocks({
-  spaceId: rootSpace.id,
-  nodes: mockNodes,
-  columns: 3,
-  origin: { x: -480, y: -260 }
-});
-
+/**
+ * 参考 Spatial 风布局：任务卡、插图叠放、长文、归档夹与知识节点共存，便于验收 whiteboard-engine + 独立 overlay。
+ */
 export const mockBlocks: KnowledgeBlock[] = [
-  ...mappedBlocks,
   {
-    id: "block-today",
+    id: "block-note-visual",
     type: "task",
-    spaceId: rootSpace.id,
-    x: 420,
-    y: -280,
-    width: 300,
-    height: 250,
-    rotation: 0,
-    zIndex: 12,
+    spaceId,
+    x: -660,
+    y: -420,
+    width: 280,
+    height: 200,
+    rotation: -0.6,
+    zIndex: 8,
     content: {
-      title: "Today",
-      items: [
-        "阅读 RAG 论文与开源项目",
-        "对比 BM25 与向量检索",
-        "设计行业 RAG 应用架构",
-        "整理成图谱 proposal"
-      ],
-      checked: [true, true, false, false]
+      title: "Visual concept",
+      items: ["Moodboard for Q3", "Color & type tests", "Grid vs freeform"],
+      checked: [true, false, false]
     },
     metadata: {}
   },
   {
-    id: "block-rag-flow",
-    type: "graph",
-    spaceId: rootSpace.id,
-    x: 840,
-    y: -220,
-    width: 420,
-    height: 245,
-    rotation: -1,
-    zIndex: 15,
+    id: "block-someday",
+    type: "task",
+    spaceId,
+    x: -420,
+    y: -480,
+    width: 260,
+    height: 170,
+    rotation: 0.5,
+    zIndex: 7,
     content: {
-      title: "RAG 关键流程",
-      steps: ["问题理解", "检索相关文档", "增强上下文", "生成回答"]
+      title: "Some day",
+      items: ["Print inspiration wall", "Archive old boards"],
+      checked: [false, false]
     },
-    metadata: { accent: "blue" }
+    metadata: {}
   },
   {
-    id: "block-visual-note",
+    id: "block-today-column",
+    type: "task",
+    spaceId,
+    x: -740,
+    y: -80,
+    width: 280,
+    height: 430,
+    rotation: 0,
+    zIndex: 11,
+    content: {
+      title: "Today",
+      items: [
+        "整理引用与摘录",
+        "补全知识块链接",
+        "给画布加 spatial index",
+        "验收 overlay 效果",
+        "写下一段长文笔记"
+      ],
+      checked: [true, true, true, false, false]
+    },
+    metadata: {}
+  },
+  {
+    id: "block-hero-art",
+    type: "image",
+    spaceId,
+    x: -120,
+    y: -220,
+    width: 520,
+    height: 360,
+    rotation: 0,
+    zIndex: 5,
+    content: {
+      title: "",
+      imageSrc: knowledgeUniverseHero,
+      caption: "Spatial canvas reference"
+    },
+    metadata: { variant: "hero" }
+  },
+  {
+    id: "block-demo-video",
+    type: "video",
+    spaceId,
+    x: 380,
+    y: -400,
+    width: 320,
+    height: 200,
+    rotation: 0,
+    zIndex: 18,
+    content: {
+      title: "Spatial clip",
+      videoUrl:
+        "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.webm"
+    },
+    metadata: {}
+  },
+  {
+    id: "block-clock-overlay",
+    type: "image",
+    spaceId,
+    x: 300,
+    y: -140,
+    width: 112,
+    height: 112,
+    rotation: 2,
+    zIndex: 22,
+    content: {
+      title: "",
+      imageSrc: "",
+      placeholderColor: "#1c65ff",
+      icon: "clock"
+    },
+    metadata: { variant: "stamp" }
+  },
+  {
+    id: "block-car-note",
+    type: "knowledge",
+    spaceId,
+    x: -800,
+    y: 100,
+    width: 300,
+    height: 280,
+    rotation: -1,
+    zIndex: 9,
+    content: {
+      title: "Drive notes",
+      summary: "路上的想法先丢在这里，回家再整理进主题空间。",
+      heroImage:
+        "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?w=600&q=80&auto=format&fit=crop"
+    },
+    metadata: { layout: "media-header" }
+  },
+  {
+    id: "block-archive-folder",
+    type: "knowledge",
+    spaceId,
+    x: -700,
+    y: 400,
+    width: 260,
+    height: 148,
+    rotation: 0,
+    zIndex: 12,
+    content: {
+      title: "Archived notes",
+      summary: "3 items · August 2025",
+      tags: ["Archive"]
+    },
+    metadata: { variant: "folder", folderCount: 3 }
+  },
+  {
+    id: "block-history-md",
     type: "markdown",
-    spaceId: rootSpace.id,
-    x: 220,
-    y: 310,
-    width: 310,
-    height: 210,
-    rotation: 0.8,
+    spaceId,
+    x: 400,
+    y: -300,
+    width: 300,
+    height: 340,
+    rotation: 0,
+    zIndex: 6,
+    content: {
+      title: "A brief history of visual thinking",
+      body:
+        "人们很早就学会用图像补充语言：地图、图表与示意图降低了协作成本。数字画布把这一过程推向极致——任意叠放、缩放与批注，让思考不必先收敛成线性大纲。\n\n在知识工作中，重要的往往不是「放在哪个文件夹」，而是「它和谁相邻」。空间记忆提供了第二条检索路径。",
+      highlights: ["空间记忆", "任意叠放"]
+    },
+    metadata: { dateLabel: "Jul 20" }
+  },
+  {
+    id: "block-spatial-md",
+    type: "markdown",
+    spaceId,
+    x: 400,
+    y: 80,
+    width: 300,
+    height: 300,
+    rotation: 0,
+    zIndex: 6,
+    content: {
+      title: "Spatial organisation",
+      body:
+        "标签与目录擅长分类，却不擅长表达「此刻的相关性」。画布上的邻近关系是一种弱链接：它可随项目演进重排，而不破坏文档本身。\n\n把摘录、网页剪藏与长文草稿放在同一视域里，你会更容易发现缺口与重复。",
+      highlights: ["弱链接", "网页剪藏"]
+    },
+    metadata: { dateLabel: "Aug 2" }
+  },
+  {
+    id: "block-node-rag",
+    type: "knowledge",
+    nodeId: "node-rag",
+    spaceId,
+    x: 80,
+    y: 200,
+    width: 280,
+    height: 200,
+    rotation: 0,
+    zIndex: 16,
+    content: {
+      title: mockNodes[0].title,
+      summary: mockNodes[0].summary,
+      tags: mockNodes[0].tags
+    },
+    metadata: { confidence: mockNodes[0].confidence, nodeType: mockNodes[0].type }
+  },
+  {
+    id: "block-node-agent",
+    type: "knowledge",
+    nodeId: "node-agent",
+    spaceId,
+    x: 460,
+    y: 260,
+    width: 270,
+    height: 190,
+    rotation: 0,
+    zIndex: 14,
+    content: {
+      title: mockNodes[1].title,
+      summary: mockNodes[1].summary,
+      tags: mockNodes[1].tags
+    },
+    metadata: { confidence: mockNodes[1].confidence, nodeType: mockNodes[1].type }
+  },
+  {
+    id: "block-node-graph",
+    type: "knowledge",
+    nodeId: "node-graph",
+    spaceId,
+    x: 140,
+    y: -520,
+    width: 290,
+    height: 200,
+    rotation: 1.2,
+    zIndex: 15,
+    content: {
+      title: mockNodes[2].title,
+      summary: mockNodes[2].summary,
+      tags: mockNodes[2].tags
+    },
+    metadata: { confidence: mockNodes[2].confidence, nodeType: mockNodes[2].type }
+  },
+  {
+    id: "block-node-spatial",
+    type: "knowledge",
+    nodeId: "node-spatial",
+    spaceId,
+    x: -200,
+    y: 220,
+    width: 260,
+    height: 190,
+    rotation: -1,
     zIndex: 10,
     content: {
-      title: "图形化设计与沟通简史",
-      body: "从早期图形图表到现代的信息叙事，图形化设计在不同媒介中不断形成、帮助人们理解复杂信息。"
+      title: mockNodes[3].title,
+      summary: mockNodes[3].summary,
+      tags: mockNodes[3].tags
     },
-    metadata: { date: "Jul 20" }
+    metadata: { confidence: mockNodes[3].confidence, nodeType: mockNodes[3].type }
+  },
+  {
+    id: "block-node-research",
+    type: "research",
+    nodeId: "node-research-question",
+    spaceId,
+    x: 620,
+    y: -120,
+    width: 320,
+    height: 220,
+    rotation: 0,
+    zIndex: 17,
+    content: {
+      title: mockNodes[4].title,
+      summary: mockNodes[4].summary,
+      tags: mockNodes[4].tags
+    },
+    metadata: { confidence: mockNodes[4].confidence, nodeType: mockNodes[4].type }
   }
 ];
 

@@ -3,6 +3,7 @@ import { Bell, Bookmark, FlaskConical, Plus, Search, Settings2, UserCircle } fro
 import { onMounted, onUnmounted, ref } from "vue";
 import AppSidebar from "./components/AppSidebar.vue";
 import CanvasToolbar from "./components/CanvasToolbar.vue";
+import BlockPreviewOverlay from "./components/BlockPreviewOverlay.vue";
 import KnowledgeCanvas from "./components/KnowledgeCanvas.vue";
 // import ResearchPanel from "./components/ResearchPanel.vue";
 import BookmarksTestPage from "./pages/BookmarksTestPage.vue";
@@ -120,6 +121,7 @@ onUnmounted(() => {
       </header>
 
       <KnowledgeCanvas />
+      <BlockPreviewOverlay />
       <!-- <ResearchPanel /> -->
       <!-- <ImportPanel /> -->
       <CanvasToolbar />

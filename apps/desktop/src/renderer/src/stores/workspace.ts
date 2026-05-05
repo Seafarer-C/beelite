@@ -38,8 +38,8 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const blocks = ref<KnowledgeBlock[]>([...mockBlocks]);
   const activeSpaceId = ref(rootSpace.id);
   const activeTool = ref<CanvasTool>("select");
-  const selectedBlockId = ref<string | null>("block-node-rag");
-  const viewport = ref<ViewportState>({ x: 560, y: 380, zoom: 0.74 });
+  const selectedBlockId = ref<string | null>("block-hero-art");
+  const viewport = ref<ViewportState>({ x: 600, y: 420, zoom: 0.5 });
   const graphProposal = ref(mockProposal);
   const importStats = ref<ImportStats | null>(null);
   const importJobs = ref<ImportJob[]>([]);
@@ -52,6 +52,8 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const llmSettings = ref<LlmSettingsPublic | null>(null);
   const researchSettings = ref<ResearchSettingsPublic | null>(null);
   const modelSettingsOpen = ref(false);
+  /** 画布上点击图片 / 视频 / Markdown 后的全屏预览（参见 Spatial 交互） */
+  const previewBlockId = ref<string | null>(null);
 
   const activeSpace = computed(() =>
     spaces.value.find((space) => space.id === activeSpaceId.value) ?? spaces.value[0]
@@ -86,7 +88,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     blocks.value = [...mockBlocks];
     activeSpaceId.value = rootSpace.id;
     graphProposal.value = mockProposal;
-    selectedBlockId.value = "block-node-rag";
+    selectedBlockId.value = "block-hero-art";
     useLiveWorkspace.value = false;
   }
 
@@ -113,6 +115,28 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   function selectBlock(blockId: string | null): void {
     selectedBlockId.value = blockId;
+  }
+
+  /** 世界坐标增量（已将屏幕位移除以 zoom）。 */
+  function moveBlockBy(blockId: string, deltaWorldX: number, deltaWorldY: number): void {
+    const i = blocks.value.findIndex((b) => b.id === blockId);
+    if (i === -1) return;
+    const b = blocks.value[i];
+    blocks.value[i] = {
+      ...b,
+      x: b.x + deltaWorldX,
+      y: b.y + deltaWorldY
+    };
+  }
+
+  function updateBlockBody(blockId: string, body: string): void {
+    const i = blocks.value.findIndex((b) => b.id === blockId);
+    if (i === -1) return;
+    const b = blocks.value[i];
+    blocks.value[i] = {
+      ...b,
+      content: { ...b.content, body }
+    };
   }
 
   function panBy(deltaX: number, deltaY: number): void {
@@ -193,6 +217,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     modelSettingsOpen.value = value;
   }
 
+  function setPreviewBlock(blockId: string | null): void {
+    previewBlockId.value = blockId;
+  }
+
   async function loadWorkspaceFromMain(): Promise<void> {
     if (!window.beelite?.loadWorkspace) return;
 
@@ -268,8 +296,12 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     llmSettings,
     researchSettings,
     modelSettingsOpen,
+    previewBlockId,
+    setPreviewBlock,
     setTool,
     selectBlock,
+    moveBlockBy,
+    updateBlockBody,
     panBy,
     zoomBy,
     refreshStorage,

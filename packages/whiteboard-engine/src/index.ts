@@ -1,33 +1,24 @@
-import type { KnowledgeBlock, ViewportState } from "@beelite/shared";
+import type { KnowledgeBlock } from "@beelite/shared";
+import type { ViewportState } from "@beelite/shared";
+import type { Size } from "./coords.js";
+import { worldToScreen } from "./coords.js";
 
-export interface Size {
-  width: number;
-  height: number;
-}
+export type { Point, Size } from "./coords.js";
+export { clampZoom, screenToWorld, worldToScreen } from "./coords.js";
 
-export interface Point {
-  x: number;
-  y: number;
-}
+export { BlockSpatialIndex, type SpatialBBox } from "./spatial-index.js";
+export {
+  visibleBlockIds,
+  visibleBlocksInPaintOrder,
+  worldRectFromViewport,
+  sortBlocksByZIndex,
+  segmentIntersectsRect,
+  type WorldRect
+} from "./visibility.js";
 
-export function clampZoom(zoom: number): number {
-  return Math.min(1.8, Math.max(0.32, zoom));
-}
-
-export function screenToWorld(point: Point, viewport: ViewportState): Point {
-  return {
-    x: (point.x - viewport.x) / viewport.zoom,
-    y: (point.y - viewport.y) / viewport.zoom
-  };
-}
-
-export function worldToScreen(point: Point, viewport: ViewportState): Point {
-  return {
-    x: point.x * viewport.zoom + viewport.x,
-    y: point.y * viewport.zoom + viewport.y
-  };
-}
-
+/**
+ * @deprecated Prefer {@link visibleBlockIds} + {@link BlockSpatialIndex} for large boards.
+ */
 export function isBlockVisible(
   block: KnowledgeBlock,
   viewport: ViewportState,
