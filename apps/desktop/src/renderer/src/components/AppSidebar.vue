@@ -2,6 +2,7 @@
 import {
   ChevronDown,
   Download,
+  Expand,
   HelpCircle,
   Minus,
   NotebookPen,
@@ -69,6 +70,15 @@ const utilityItems = [
         <strong>{{ zoomLabel }}</strong>
         <button type="button" aria-label="放大" @click="store.zoomBy(0.06)">
           <Plus :size="15" />
+        </button>
+        <button
+          type="button"
+          class="zoom-fit"
+          aria-label="缩放到可见范围"
+          title="使当前空间全部节点进入视窗（⌘⇧1）"
+          @click="store.fitViewportToVisibleBlocks()"
+        >
+          <Expand :size="15" />
         </button>
       </div>
       <div class="mini-map-ghost">

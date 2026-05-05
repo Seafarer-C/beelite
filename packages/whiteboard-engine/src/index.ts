@@ -16,6 +16,18 @@ export {
   type WorldRect
 } from "./visibility.js";
 
+export {
+  computeBoardLayoutPositions,
+  type BoardLayoutPresetId,
+  type BoardLayoutPresetOptions
+} from "./layout-presets.js";
+
+export {
+  computeViewportFitToBlocks,
+  computeWorldBoundsForBlocks,
+  type ComputeViewportFitToBlocksOptions
+} from "./viewport-fit.js";
+
 /**
  * @deprecated Prefer {@link visibleBlockIds} + {@link BlockSpatialIndex} for large boards.
  */

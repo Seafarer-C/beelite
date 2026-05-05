@@ -21,7 +21,12 @@ import type {
   WorkspaceSnapshot
 } from "@beelite/shared";
 import { createRootSpace } from "@beelite/space-engine";
-import { clampZoom } from "@beelite/whiteboard-engine";
+import {
+  clampZoom,
+  computeBoardLayoutPositions,
+  computeViewportFitToBlocks,
+  type BoardLayoutPresetId
+} from "@beelite/whiteboard-engine";
 import {
   mockBlocks,
   mockEdges,
@@ -29,6 +34,8 @@ import {
   mockProposal,
   rootSpace
 } from "../data/mockKnowledge";
+
+export type { BoardLayoutPresetId } from "@beelite/whiteboard-engine";
 
 export type CanvasTool =
   | "hand"
@@ -133,6 +140,8 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const activeTool = ref<CanvasTool>("select");
   const selectedBlockIds = ref<string[]>(["block-hero-art"]);
   const viewport = ref<ViewportState>({ x: 600, y: 420, zoom: 0.5 });
+  /** 画布 DOM 像素尺寸，供「缩放到可见」等计算使用（由 KnowledgeCanvas 同步） */
+  const canvasPixelSize = ref({ width: 1200, height: 800 });
   const graphProposal = ref(mockProposal);
   const importStats = ref<ImportStats | null>(null);
   const importJobs = ref<ImportJob[]>([]);
@@ -716,6 +725,40 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     };
   }
 
+  function setCanvasPixelSize(width: number, height: number): void {
+    const w = Number.isFinite(width) && width > 0 ? width : 1200;
+    const h = Number.isFinite(height) && height > 0 ? height : 800;
+    canvasPixelSize.value = { width: w, height: h };
+  }
+
+  /**
+   * 将视口缩放并平移，使当前空间内全部相关块进入视窗（可撤销）。
+   * 文件夹聚焦时仅框住该文件夹及其子块；否则为当前空间全部块。
+   */
+  function fitViewportToVisibleBlocks(options?: { padding?: number }): void {
+    const sid = activeSpaceId.value;
+    const fid = focusedFolderBlockId.value;
+    let blockIds: Set<string> | undefined;
+    if (fid) {
+      const folder = blocks.value.find((b) => b.id === fid);
+      if (folder && isFolderKnowledgeBlock(folder)) {
+        blockIds = new Set([fid]);
+        if (folderHasExplicitChildList(folder)) {
+          for (const cid of folderChildBlockIdsList(folder)) {
+            blockIds.add(cid);
+          }
+        }
+      }
+    }
+
+    pushCanvasHistory();
+    viewport.value = computeViewportFitToBlocks(
+      blocks.value,
+      { spaceId: sid, blockIds, padding: options?.padding ?? 56 },
+      canvasPixelSize.value
+    );
+  }
+
   function zoomBy(delta: number, anchor?: { x: number; y: number }): void {
     const previousZoom = viewport.value.zoom;
     const nextZoom = clampZoom(previousZoom + delta);
@@ -736,6 +779,30 @@ export const useWorkspaceStore = defineStore("workspace", () => {
       y: anchor.y - worldY * nextZoom,
       zoom: nextZoom
     };
+  }
+
+  /** 应用内置排版预设；有选区时只动选区，否则整理当前空间内全部块（可撤销） */
+  function applyBoardLayoutPreset(preset: BoardLayoutPresetId): void {
+    const sid = activeSpaceId.value;
+    const sel = selectedBlockIds.value;
+    const movableIds = new Set(
+      sel.length > 0 ? sel : blocks.value.filter((b) => b.spaceId === sid).map((b) => b.id)
+    );
+    if (movableIds.size === 0) return;
+
+    pushCanvasHistory();
+    const updates = computeBoardLayoutPositions(blocks.value, sid, preset, {
+      movableIds,
+      gutter: 16,
+      gridSnap: 8,
+      maxOverlapIterations: 100
+    });
+    if (updates.size === 0) return;
+    blocks.value = blocks.value.map((b) => {
+      const p = updates.get(b.id);
+      return p ? { ...b, x: p.x, y: p.y } : b;
+    });
+    syncActiveSpaceBlockIds();
   }
 
   async function refreshStorage(): Promise<void> {
@@ -946,6 +1013,9 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     updateBlockBody,
     panBy,
     zoomBy,
+    setCanvasPixelSize,
+    fitViewportToVisibleBlocks,
+    applyBoardLayoutPreset,
     refreshStorage,
     refreshLlmSettings,
     refreshResearchSettings,

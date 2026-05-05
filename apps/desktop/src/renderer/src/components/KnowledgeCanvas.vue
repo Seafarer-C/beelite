@@ -7,7 +7,7 @@ import {
   visibleBlockIds,
   visibleBlocksInPaintOrder
 } from "@beelite/whiteboard-engine";
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import CanvasGraphOverlay from "./CanvasGraphOverlay.vue";
 import KnowledgeCard from "./KnowledgeCard.vue";
 import {
@@ -27,6 +27,14 @@ const PLACE_CLICK_TOLERANCE_PX = 10;
 const store = useWorkspaceStore();
 const canvasRef = ref<HTMLElement | null>(null);
 const { width, height } = useElementSize(canvasRef);
+
+watch(
+  [width, height],
+  ([w, h]) => {
+    store.setCanvasPixelSize(w, h);
+  },
+  { immediate: true }
+);
 
 function expandVisibleIdsWithFolderDescendants(
   base: ReadonlySet<string>,
@@ -185,6 +193,13 @@ let resizeCanvasHistoryGrouped = false;
 let zoomCanvasHistoryGrouped = false;
 let zoomCanvasHistoryFlushTimer: number | null = null;
 
+/** 指针工具下按住空格 → 临时平移画布（与抓手一致） */
+const spacePanHeld = ref(false);
+/** 抓手在卡片上按下时：轻点视为「查看」；超过阈值则视为平移 */
+let panTapPickBlockId: string | null = null;
+let panGestureStartClientX = 0;
+let panGestureStartClientY = 0;
+
 const marqueeState = reactive({
   active: false,
   pointerId: 0,
@@ -316,8 +331,67 @@ function hitTestMarquee(): string[] {
 
 const canvasStageClass = computed(() => ({
   "canvas-stage--placement": isAddTool(store.activeTool),
-  "canvas-stage--folder-focus": Boolean(store.focusedFolderBlockId)
+  "canvas-stage--folder-focus": Boolean(store.focusedFolderBlockId),
+  "canvas-stage--select-tool": store.activeTool === "select",
+  "canvas-stage--hand-tool": store.activeTool === "hand",
+  "canvas-stage--space-pan": spacePanHeld.value && store.activeTool === "select",
+  "canvas-stage--panning": dragState.active && panCanvasHistoryGrouped
 }));
+
+function clearSpacePanHeld(): void {
+  spacePanHeld.value = false;
+}
+
+/** 抓手轻点卡片：选中 / 文件夹展开 / 可预览类型进入预览（Markdown 可在预览里编辑） */
+function applyBlockTapActions(bid: string, additive: boolean): void {
+  store.selectBlock(bid, { additive });
+  const b = store.blocks.find((x) => x.id === bid);
+  if (!additive && b && isFolderKnowledgeBlock(b)) {
+    if (store.focusedFolderBlockId === bid) {
+      store.clearFolderFocus();
+    } else {
+      store.setFolderFocus(bid);
+    }
+  } else if (
+    !additive &&
+    store.selectedBlockIds.length === 1 &&
+    b &&
+    (b.type === "image" || b.type === "markdown" || b.type === "video")
+  ) {
+    store.setPreviewBlock(bid);
+  }
+}
+
+function startCanvasPan(event: PointerEvent, pickBlockIdForHandTap: string | null): void {
+  if (event.button !== 0 && event.button !== 1) return;
+  store.beginCanvasHistoryGroup();
+  panCanvasHistoryGrouped = true;
+  panTapPickBlockId = pickBlockIdForHandTap;
+  panGestureStartClientX = event.clientX;
+  panGestureStartClientY = event.clientY;
+  dragState.active = true;
+  dragState.pointerId = event.pointerId;
+  dragState.lastX = event.clientX;
+  dragState.lastY = event.clientY;
+  canvasRef.value?.setPointerCapture(event.pointerId);
+}
+
+function onWindowKeyDownSpacePan(event: KeyboardEvent): void {
+  if (event.code !== "Space" && event.key !== " ") return;
+  if (event.repeat) return;
+  if (store.activeTool !== "select") return;
+  if (store.previewBlockId || store.modelSettingsOpen) return;
+  const t = event.target as HTMLElement | null;
+  if (t?.closest("input, textarea, select, [contenteditable=true]")) return;
+  if (t?.closest(".block-preview-root, [role='dialog']")) return;
+  event.preventDefault();
+  spacePanHeld.value = true;
+}
+
+function onWindowKeyUpSpacePan(event: KeyboardEvent): void {
+  if (event.code !== "Space" && event.key !== " ") return;
+  spacePanHeld.value = false;
+}
 
 function onFolderFocusMaskWheel(event: WheelEvent): void {
   onWheel(event);
@@ -335,17 +409,27 @@ function onPointerDown(event: PointerEvent): void {
   const tool = store.activeTool;
 
   if (tool === "hand") {
-    store.beginCanvasHistoryGroup();
-    panCanvasHistoryGrouped = true;
-    dragState.active = true;
-    dragState.pointerId = event.pointerId;
-    dragState.lastX = event.clientX;
-    dragState.lastY = event.clientY;
-    canvasRef.value?.setPointerCapture(event.pointerId);
+    if (event.button === 1) {
+      event.preventDefault();
+    }
+    if (event.button === 0 || event.button === 1) {
+      startCanvasPan(event, null);
+    }
     return;
   }
 
   if (tool === "select") {
+    if (event.button === 1) {
+      event.preventDefault();
+      startCanvasPan(event, null);
+      return;
+    }
+    if (event.button === 0 && spacePanHeld.value) {
+      event.preventDefault();
+      startCanvasPan(event, null);
+      return;
+    }
+    if (event.button !== 0) return;
     marqueeState.active = true;
     marqueeState.pointerId = event.pointerId;
     const w = screenToWorld(event.clientX, event.clientY);
@@ -370,10 +454,35 @@ function onPointerDown(event: PointerEvent): void {
 }
 
 function onBlockPointerDown(event: PointerEvent, block: KnowledgeBlock): void {
-  if (event.button !== 0) return;
   const target = event.target as HTMLElement;
   if (target.closest("[data-no-card-drag]")) return;
   if (target.closest(".block-resize-handle")) return;
+
+  const tool = store.activeTool;
+
+  if (tool === "hand") {
+    if (event.button === 1) {
+      event.preventDefault();
+    }
+    if (event.button !== 0 && event.button !== 1) return;
+    if (event.button === 0) {
+      event.preventDefault();
+    }
+    event.stopPropagation();
+    startCanvasPan(event, event.button === 0 ? block.id : null);
+    return;
+  }
+
+  if (tool === "select" && (spacePanHeld.value || event.button === 1)) {
+    if (event.button === 1) {
+      event.preventDefault();
+    }
+    event.stopPropagation();
+    startCanvasPan(event, null);
+    return;
+  }
+
+  if (event.button !== 0) return;
 
   event.stopPropagation();
   cardGesture.blockId = block.id;
@@ -514,22 +623,7 @@ function endDrag(event: PointerEvent): void {
 
     if (bid) {
       if (!wasDragging) {
-        store.selectBlock(bid, { additive });
-        const b = store.blocks.find((x) => x.id === bid);
-        if (!additive && b && isFolderKnowledgeBlock(b)) {
-          if (store.focusedFolderBlockId === bid) {
-            store.clearFolderFocus();
-          } else {
-            store.setFolderFocus(bid);
-          }
-        } else if (
-          !additive &&
-          store.selectedBlockIds.length === 1 &&
-          b &&
-          (b.type === "image" || b.type === "markdown" || b.type === "video")
-        ) {
-          store.setPreviewBlock(bid);
-        }
+        applyBlockTapActions(bid, additive);
       }
     }
     return;
@@ -589,6 +683,14 @@ function endDrag(event: PointerEvent): void {
   }
   flushPan();
   if (panCanvasHistoryGrouped) {
+    const dx = event.clientX - panGestureStartClientX;
+    const dy = event.clientY - panGestureStartClientY;
+    const smallMove = dx * dx + dy * dy < CARD_DRAG_THRESHOLD_PX * CARD_DRAG_THRESHOLD_PX;
+    const pickId = panTapPickBlockId;
+    panTapPickBlockId = null;
+    if (smallMove && pickId && store.activeTool === "hand") {
+      applyBlockTapActions(pickId, false);
+    }
     store.endCanvasHistoryGroup();
     panCanvasHistoryGrouped = false;
   }
@@ -660,10 +762,17 @@ function onDeleteKey(event: KeyboardEvent): void {
 
 onMounted(() => {
   window.addEventListener("keydown", onDeleteKey);
+  window.addEventListener("keydown", onWindowKeyDownSpacePan, true);
+  window.addEventListener("keyup", onWindowKeyUpSpacePan, true);
+  window.addEventListener("blur", clearSpacePanHeld);
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", onDeleteKey);
+  window.removeEventListener("keydown", onWindowKeyDownSpacePan, true);
+  window.removeEventListener("keyup", onWindowKeyUpSpacePan, true);
+  window.removeEventListener("blur", clearSpacePanHeld);
+  clearSpacePanHeld();
   if (panRafId !== 0) cancelAnimationFrame(panRafId);
   if (zoomCanvasHistoryFlushTimer !== null) {
     clearTimeout(zoomCanvasHistoryFlushTimer);
@@ -682,6 +791,7 @@ onUnmounted(() => {
     class="canvas-stage"
     :class="canvasStageClass"
     @wheel.prevent="onWheel"
+    @auxclick.prevent
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="endDrag"

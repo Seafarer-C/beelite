@@ -74,6 +74,11 @@ function onCanvasUndoRedoKeydown(event: KeyboardEvent): void {
   if (key === "y" || (key === "z" && event.shiftKey)) {
     event.preventDefault();
     workspace.redoCanvas();
+    return;
+  }
+  if (key === "1" && event.shiftKey) {
+    event.preventDefault();
+    workspace.fitViewportToVisibleBlocks();
   }
 }
 

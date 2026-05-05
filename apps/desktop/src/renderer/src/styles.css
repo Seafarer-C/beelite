@@ -324,11 +324,19 @@ button {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  cursor: grab;
+  cursor: default;
   touch-action: none;
 }
 
-.canvas-stage:active {
+.canvas-stage--hand-tool {
+  cursor: grab;
+}
+
+.canvas-stage--select-tool.canvas-stage--space-pan {
+  cursor: grab;
+}
+
+.canvas-stage--panning {
   cursor: grabbing;
 }
 
@@ -1064,7 +1072,8 @@ button {
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 58px;
+  min-height: 58px;
+  height: auto;
   padding: 8px;
   border: 1px solid rgba(20, 20, 18, 0.08);
   border-radius: 8px;
@@ -1097,6 +1106,58 @@ button {
   height: 28px;
   margin: 0 5px;
   background: rgba(20, 20, 18, 0.1);
+}
+
+.canvas-toolbar__layout {
+  position: relative;
+  list-style: none;
+}
+
+.canvas-toolbar__layout > summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3d403b;
+}
+
+.canvas-toolbar__layout > summary::-webkit-details-marker {
+  display: none;
+}
+
+.canvas-toolbar__layout-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  display: grid;
+  gap: 4px;
+  min-width: 168px;
+  padding: 8px;
+  border: 1px solid rgba(20, 20, 18, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 253, 0.98);
+  box-shadow: 0 16px 48px rgba(20, 22, 24, 0.16);
+}
+
+.canvas-toolbar__layout-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #2f312d;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.canvas-toolbar__layout-item:hover {
+  color: #1c65ff;
+  background: rgba(28, 101, 255, 0.08);
 }
 
 .canvas-toolbar--batch {

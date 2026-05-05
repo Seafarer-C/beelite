@@ -1,29 +1,94 @@
 <script setup lang="ts">
 import {
+  CircleDot,
+  Columns2,
   FolderInput,
+  GripHorizontal,
+  GripVertical,
   Hand,
   Image,
   Layers,
+  LayoutGrid,
   MousePointer2,
   Network,
+  Orbit,
+  PanelsTopLeft,
+  ScanSearch,
   ScrollText,
   Sparkles,
   StickyNote,
   Trash2,
   Type,
   Video,
+  Waypoints,
   X
 } from "lucide-vue-next";
 import { computed } from "vue";
-import { useWorkspaceStore, type CanvasTool } from "../stores/workspace";
+import {
+  useWorkspaceStore,
+  type BoardLayoutPresetId,
+  type CanvasTool
+} from "../stores/workspace";
 
 const store = useWorkspaceStore();
 
 const batchMode = computed(() => store.hasMultiSelection);
 
-const navTools: Array<{ id: CanvasTool; label: string; icon: unknown }> = [
-  { id: "hand", label: "移动画布", icon: Hand },
-  { id: "select", label: "选择 / 框选", icon: MousePointer2 }
+const navTools: Array<{ id: CanvasTool; label: string; title: string; icon: unknown }> = [
+  {
+    id: "hand",
+    label: "移动画布",
+    title: "仅平移画布；点击卡片查看预览（Markdown 可在预览中编辑）",
+    icon: Hand
+  },
+  {
+    id: "select",
+    label: "选择 / 框选",
+    title: "拖拽框选；按住空格或中键拖拽可平移画布",
+    icon: MousePointer2
+  }
+];
+
+const layoutPresets: Array<{ id: BoardLayoutPresetId; label: string; title: string; icon: unknown }> = [
+  {
+    id: "resolve-overlaps",
+    label: "去重叠",
+    title: "推开重叠块，保留大致位置",
+    icon: ScanSearch
+  },
+  { id: "grid", label: "网格", title: "近似方阵网格", icon: LayoutGrid },
+  {
+    id: "horizontal-row",
+    label: "横排",
+    title: "单行水平排列，垂直居中",
+    icon: GripHorizontal
+  },
+  {
+    id: "vertical-column",
+    label: "纵列",
+    title: "单列垂直排列，水平居中",
+    icon: GripVertical
+  },
+  { id: "circle", label: "环形", title: "围绕选区中心环形摆放", icon: CircleDot },
+  { id: "snake-grid", label: "蛇形", title: "网格且奇偶行反向（蛇形）", icon: Waypoints },
+  {
+    id: "two-columns",
+    label: "双列",
+    title: "阅读序拆成左右两列，垂直堆叠",
+    icon: Columns2
+  },
+  {
+    id: "brick-rows",
+    label: "砖行",
+    title: "错行网格，奇偶行水平错开半格",
+    icon: PanelsTopLeft
+  },
+  {
+    id: "phyllo-spiral",
+    label: "叶序",
+    title: "黄金角螺旋展开，适合较多节点",
+    icon: Orbit
+  }
 ];
 
 const addTools: Array<{ id: CanvasTool; label: string; icon: unknown }> = [
@@ -44,6 +109,12 @@ function setTool(id: CanvasTool): void {
 function clearBatchSelection(): void {
   store.clearSelection();
 }
+
+function applyLayout(id: BoardLayoutPresetId, event: MouseEvent): void {
+  store.applyBoardLayoutPreset(id);
+  const det = (event.currentTarget as HTMLElement | null)?.closest("details");
+  if (det) (det as HTMLDetailsElement).open = false;
+}
 </script>
 
 <template>
@@ -63,6 +134,23 @@ function clearBatchSelection(): void {
       <FolderInput :size="18" />
       <span>归入文件夹</span>
     </button>
+    <details class="canvas-toolbar__layout">
+      <summary class="tool-button tool-button--wide" title="排版预设（可撤销）">排版</summary>
+      <div class="canvas-toolbar__layout-panel" role="menu">
+        <button
+          v-for="p in layoutPresets"
+          :key="p.id"
+          type="button"
+          class="canvas-toolbar__layout-item"
+          role="menuitem"
+          :title="p.title"
+          @click="applyLayout(p.id, $event)"
+        >
+          <component :is="p.icon" :size="16" />
+          <span>{{ p.label }}</span>
+        </button>
+      </div>
+    </details>
     <button
       type="button"
       class="tool-button tool-button--danger tool-button--wide"
@@ -84,7 +172,7 @@ function clearBatchSelection(): void {
       class="tool-button"
       :class="{ active: store.activeTool === tool.id }"
       type="button"
-      :title="tool.label"
+      :title="tool.title"
       @click="setTool(tool.id)"
     >
       <component :is="tool.icon" :size="20" />
@@ -105,6 +193,26 @@ function clearBatchSelection(): void {
     </button>
 
     <span class="canvas-toolbar__sep" aria-hidden="true" />
+
+    <details class="canvas-toolbar__layout">
+      <summary class="tool-button" title="排版预设（有选区则只整理选区，否则当前空间全部；可撤销）">
+        排版
+      </summary>
+      <div class="canvas-toolbar__layout-panel" role="menu">
+        <button
+          v-for="p in layoutPresets"
+          :key="p.id"
+          type="button"
+          class="canvas-toolbar__layout-item"
+          role="menuitem"
+          :title="p.title"
+          @click="applyLayout(p.id, $event)"
+        >
+          <component :is="p.icon" :size="16" />
+          <span>{{ p.label }}</span>
+        </button>
+      </div>
+    </details>
 
     <button
       v-if="store.selectionCount > 0"
